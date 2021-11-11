@@ -2,23 +2,23 @@ package main
 
 import (
 	"crypto/elliptic"
-	"crypto/aes"
+	//"crypto/aes"
 	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/rand"
 	"math/big"
 	"fmt"
-	"errors"
+	//"errors"
 )
 
-func KeyTo64(publicKey crypto.PublicKey) byte[] {
+func KeyTo64(publicKey *ecdsa.PublicKey) []byte {
 	formatted := make([]byte, 64)
 	publicKey.X.FillBytes(formatted[:32])
 	publicKey.Y.FillBytes(formatted[32:])
 	return formatted
 }
 
-func MakeSign64(privateKey crypto.PrivateKey) ([]byte, error) {
+func MakeSign64(privateKey ecdsa.PrivateKey) ([]byte, error) {
 	var r, s big.Int
 	message := []byte("Ceci est une signature test ecdsa de Marc et P-Aug\n")
 	hashed := sha256.Sum256(message)
@@ -29,11 +29,11 @@ func MakeSign64(privateKey crypto.PrivateKey) ([]byte, error) {
 	return signature, err
 }
 
-func 64ToKey(data []byte) crypto.PublicKey {
+func _64ToKey(data []byte) ecdsa.PublicKey {
 	var x, y big.Int
 	x.SetBytes(data[:32])
 	y.SetBytes(data[32:])
-	toCheckKey := ecdsa.publicKey {
+	toCheckKey := ecdsa.PublicKey {
 		Curve : elliptic.P256(),
 		X : &x,
 		Y : &y,
@@ -41,7 +41,7 @@ func 64ToKey(data []byte) crypto.PublicKey {
 	return toCheckKey
 }
 
-func VerifSign64(signature []byte, toCheckKey crypto.PublicKey) bool {
+func VerifSign64(signature []byte, toCheckKey ecdsa.PublicKey) bool {
 	var r, s big.Int
 	r.SetBytes(signature[:32])
 	s.SetBytes(signature[32:])
@@ -64,8 +64,7 @@ func main(){
 	ok := VerifSign64(signature, publicKey)
 	if ok == true {
 		fmt.Println("Well done!")
-	}
-	else {
+	} else {
 		fmt.Println("You rebel scums!")
 	}
 }
