@@ -11,7 +11,7 @@ import (
 	//"errors"
 )
 
-func KeyTo64(publicKey *ecdsa.PublicKey) []byte {
+func KeyTo64(publicKey ecdsa.PublicKey) []byte {
 	formatted := make([]byte, 64)
 	publicKey.X.FillBytes(formatted[:32])
 	publicKey.Y.FillBytes(formatted[32:])

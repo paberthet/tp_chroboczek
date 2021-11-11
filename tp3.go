@@ -4,7 +4,9 @@ import (
 	"io/ioutil"
 	"log"
 	"net/http"
+	//"net"
 	"time"
+	//"bufio"
 	"fmt"
 	"crypto/tls"
 	"bytes"
@@ -12,6 +14,7 @@ import (
 )
 
 var chatUrl = "https://jch.irif.fr:8082/peers/"
+var chatUrladdr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
 
 func main() {
 	transport := &*http.DefaultTransport.(*http.Transport)
@@ -47,7 +50,7 @@ func main() {
 	//fmt.Printf("%v\n",string(ids[0]))
 	
 	if len(ids) > 0 {
-		fmt.Printf("len(ids) : %d", len(ids))
+		//fmt.Printf("len(ids) : %d", len(ids))
 		last := len(ids) - 1
 		if len(ids[last]) == 0 {
 			ids = ids[:last] 
@@ -59,7 +62,7 @@ func main() {
 			qui symbolisait la fin de la liste
 			*/
 		}
-		fmt.Printf("len(ids) : %d", len(ids))
+		//fmt.Printf("len(ids) : %d", len(ids))
 	}
 
 
@@ -68,4 +71,30 @@ func main() {
 		
 	}
 	
+	fmt.Printf("\nSuite\n\n")
+	
+	//Récupération de l'adresse root de jch.irif.fr ( en réalité hash(&root) )
+	
+	req, err = http.NewRequest("GET", chatUrladdr, nil)
+	if err != nil {
+		log.Printf("NewRequest: %v", err)
+		return
+	}
+
+	r, err = client.Do(req)
+	if err != nil {
+		log.Printf("Get: %v", err)
+		return
+	}
+
+	body, err = ioutil.ReadAll(r.Body)
+	r.Body.Close()
+
+	if err != nil {
+		log.Printf("Read: %v", err)
+		return
+	}
+	
+	fmt.Printf("rep adresse :\n%s\n",string(body))
+
 }
