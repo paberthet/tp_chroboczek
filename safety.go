@@ -11,14 +11,6 @@ import (
 	"errors"
 )
 
-var r, s big.Int
-
-message := []byte("Ceci est une signature ecdsa de Marc et P-Aug\n")
-hashed := sha256.Sum256(message)
-
-privateKey, err := GenerateKey(elliptic.P256(), rand.Reader)
-publicKey = privateKey.Public()
-
 func KeyTo64(publicKey crypto.PublicKey) byte[] {
 	formatted := make([]byte, 64)
 	publicKey.X.FillBytes(formatted[:32])
@@ -27,6 +19,9 @@ func KeyTo64(publicKey crypto.PublicKey) byte[] {
 }
 
 func MakeSign64(privateKey crypto.PrivateKey) ([]byte, error) {
+	var r, s big.Int
+	message := []byte("Ceci est une signature test ecdsa de Marc et P-Aug\n")
+	hashed := sha256.Sum256(message)
 	r, s, err := ecdsa.Sign(rand.Reader, privateKey, hashed[:])
 	signature := make([]byte, 64)
 	r.FillBytes(signature[:32])
@@ -46,9 +41,31 @@ func 64ToKey(data []byte) crypto.PublicKey {
 	return toCheckKey
 }
 
-func VerifSign64(signature []byte) bool {
+func VerifSign64(signature []byte, toCheckKey crypto.PublicKey) bool {
+	var r, s big.Int
 	r.SetBytes(signature[:32])
 	s.SetBytes(signature[32:])
-	ok = ecdsa.Verif(toCheckKey, hashed[:], &r, &s)
+	message := []byte("Ceci est une signature test ecdsa de Marc et P-Aug\n")
+	hashed := sha256.Sum256(message)
+	ok := ecdsa.Verif(toCheckKey, hashed[:], &r, &s)
 	return ok
+}
+
+func main(){
+
+	privateKey, _ := GenerateKey(elliptic.P256(), rand.Reader)
+	publicKey = privateKey.Public()
+
+	tabKey := KeyTo64(publicKey)
+	fmt.Println("%s", tabKey)
+
+	signature, _ := MakeSign64(privateKey)
+	
+	ok := VerifSign64(signature, publicKey)
+	if ok == true {
+		fmt.Println("Well done!")
+	}
+	else {
+		fmt.Println("You rebel scums!")
+	}
 }
