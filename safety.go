@@ -1,5 +1,6 @@
 package main
 
+/*
 import (
 	"crypto/elliptic"
 	//"crypto/aes"
@@ -60,7 +61,7 @@ func main(){
 	fmt.Println("%s", tabKey)
 
 	signature, _ := MakeSign64(privateKey)
-	
+
 	ok := VerifSign64(signature, publicKey)
 	if ok == true {
 		fmt.Println("Well done!")
@@ -68,3 +69,4 @@ func main(){
 		fmt.Println("You rebel scums!")
 	}
 }
+*/
