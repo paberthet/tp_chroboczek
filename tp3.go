@@ -13,6 +13,14 @@ import (
 
 )
 
+type message struct{
+	Id uint32;
+	Type uint8;
+	Len uint16;
+	Body []byte;
+
+}
+
 var chatUrl = "https://jch.irif.fr:8082/peers/"
 var chatUrladdr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
 
@@ -71,7 +79,7 @@ func main() {
 		
 	}
 	
-	fmt.Printf("\nSuite\n\n")
+	fmt.Printf("\nRécupération du hash de root\n\n")
 	
 	//Récupération de l'adresse root de jch.irif.fr ( en réalité hash(&root) )
 	
@@ -96,5 +104,14 @@ func main() {
 	}
 	
 	fmt.Printf("rep adresse :\n%s\n",string(body))
+
+	//######################################################################
+
+	var data message
+	data.Id = 1 //Il faut juste que ce soit différent de 0
+	data.Type = uint8(len(body))
+	data.Body = body
+
+	
 
 }
