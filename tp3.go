@@ -12,15 +12,16 @@ import (
 	"bytes"
 	"crypto/tls"
 	"fmt"
+	"encoding/binary"
 )
-
+/*
 type message struct {
 	Id   uint32
 	Type uint8
-	Len  uint16
+	Length  uint16
 	Body []byte
-}
-
+}*/
+var serveurUrl = "jch.irif.fr:8082"
 var chatUrl = "https://jch.irif.fr:8082/peers/"
 var chatUrladdr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
 
@@ -106,20 +107,47 @@ func main() {
 
 	//######################################################################
 
+
+	//message Hello
+	
+	ext := make([]byte,4)
+	var name string
+	name = "panic" 
+	hello := append(ext, []byte(name)... )
+	
+	Id := make([]byte, 4)
+	Id[3] = 1
+	Type := make([]byte,1)
+	Type[0] = 0
+	Length := make([]byte,2)
+	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
+
+
+	//b := make([]byte, 8)
+	//binary.LittleEndian.PutUint64(b, uint64(i))
+	
+	/*
 	var data message
 	data.Id = 1 //Il faut juste que ce soit différent de 0
-	data.Type = uint8(len(body))
-	data.Body = body
+	data.Type = 0
+	data.Length = uint16(len(hello))
+	data.Body = hello
+	*/
 
-	buff := make([]byte, 1)
-	raddr, _ := net.ResolveUDPAddr("udp", chatUrl)
-	conn, errD := net.DialUDP("udp", nil, raddr)
+
+	//buff := make([]byte, 1)
+	//raddr, _ := net.ResolveUDPAddr("udp", chatUrl)
+	conn, errD := net.Dial("udp", serveurUrl)
 	if errD != nil {
 		log.Fatalf("Connection error%d\n", err)
 		return
 	}
-	buff[0] = 0
-	_, err = conn.Write(buff) // _ = on ne donne pas de nom à la variable car on ne veut pas l'utiliser
+	defer conn.Close()
+	//buff[0] = 0
+
+	Message := append(append(append([]byte(Id), []byte(Type)...),[]byte(Length) ...), hello ...)
+
+	_, err = conn.Write( Message )  // _ = on ne donne pas de nom à la variable car on ne veut pas l'utiliser
 	if err != nil {
 		log.Fatalf("Write error %d", err)
 		return
