@@ -187,7 +187,7 @@ func main() {
 
 	fmt.Printf("PublicKey:\n%s\n\n", publicKey[8:]) //Le body de publicKey comment à l'octet numéro 7
 
-	fmt.Printf("PublicKeyID:\n%s\n\n", publicKey[:4])
+	fmt.Printf("PublicKeyID:\n%x\n\n", publicKey[:4])
 	//publicKey[:4] sont les 4 premiers octets du paquet UDP, soit l'id ????
 
 	fmt.Printf("PublicKeyReply\n\n")
