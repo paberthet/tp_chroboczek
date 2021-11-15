@@ -209,10 +209,21 @@ func main() {
 		return
 	}
 
+	//écoute du root
+	root := make([]byte, 1024)
+	n,_, err = conn.ReadFromUDP(root)
+	if err != nil {
+		log.Fatalf("Read error %d", err)
+		return
+	}
+	fmt.Printf("Number of byte copied in response root:\n%d\n\n", n)
+	fmt.Printf("root:\n%x\n\n", root[7:39])
+	//patched
 
+	
 	//envoi de notre hash(racine) : 0 pour le moment car on n'exporte aucun fichier
 	
-	Type[0] = 2 //c'est le type de root
+	Type[0] = 130 //c'est le type de rootReply
 	hashEmptyRoot := make([]byte,32)
 	binary.BigEndian.PutUint16(Length[0:], uint16(len(hashEmptyRoot)))
 
@@ -228,9 +239,7 @@ func main() {
 	fmt.Printf("len(hash)=%d\n",len(hashEmptyRoot))
 	fmt.Printf("hashEmptyRoot :\n0x%x\n\n",hashEmptyRoot[0:32])
 	//fmt.Printf("0x%s\n\n",hashEmptyRootStr) //test pour vérifier que l'entrée a bien été faite
-	
-
-	rootMessage := append(append(append([]byte(Id), []byte(Type)...),[]byte(Length) ...),[]byte(hashEmptyRoot)...)
+	rootMessage := append(append(append([]byte(Id), []byte(Type)...),[]byte(Length) ...),[]byte(hashEmptyRoot)...) //rootReply
 	//On envoie le paquet
 	n, err = conn.Write( rootMessage )  // _ = on ne donne pas de nom à la variable car on ne veut pas l'utiliser
 	if err != nil {
@@ -239,17 +248,6 @@ func main() {
 	}
 	fmt.Printf("Written bytes in root message: %d\nNormaly 39 : 7 for the header and 32 for the hash\n\n", n)
 
-	//écoute du root reply
-	//apparement le type de rootReply est aussi 2 et non pas 130
-	rootReply := make([]byte, 1024)
-	n,_, err = conn.ReadFromUDP(rootReply)
-	if err != nil {
-		log.Fatalf("Read error %d", err)
-		return
-	}
-	fmt.Printf("Number of byte copied in response rootReply:\n%d\n\n", n)
-	fmt.Printf("rootReply:\n%x\n\n", rootReply[7:39])
-	//Euh... pourquoi c'est le root de jch qu'on récupère??? ça ne colle pas avec le sujet
 
 
 
