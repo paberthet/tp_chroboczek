@@ -217,7 +217,8 @@ func main() {
 		return
 	}
 	fmt.Printf("Number of byte copied in response root:\n%d\n\n", n)
-	fmt.Printf("root:\n%x\n\n", root[7:39])
+	fmt.Printf("root:\n%x\n", root[7:39])
+	fmt.Printf("Type of root message : %x\n\n",root[4])
 	//patched
 
 	
