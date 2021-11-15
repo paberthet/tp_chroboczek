@@ -314,7 +314,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("rep adresse :\n%s\n",string(body)) //étrange pour le moment n'affiche rien..
+	fmt.Printf("rep adresse :\n%x\n",body) //étrange pour le moment n'affiche rien..
 
 }
 
