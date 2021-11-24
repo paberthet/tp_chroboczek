@@ -106,7 +106,7 @@ func main() {
 		return
 	}
 
-	fmt.Printf("rep adresse :\n%x\n", body)
+	fmt.Printf("rep adresse :\n%x\n\n", body)
 
 	//######################################################################
 
@@ -154,6 +154,7 @@ func main() {
 	//buff[0] = 0
 
 	Message := append(append(append([]byte(Id), []byte(Type)...),[]byte(Length) ...), hello ...)
+	fmt.Printf("Id hello =%x\n\n",Message[:4])
 
 	_, err = conn.Write( Message )  // _ = on ne donne pas de nom à la variable car on ne veut pas l'utiliser
 	if err != nil {
@@ -174,21 +175,31 @@ func main() {
 	}
 	fmt.Printf("Number of byte copied:\n%d\n\n", n)
 	fmt.Printf("Hello reply:\n%s\n\n", reponse)
+	fmt.Printf("Id helloReply = %x\n\n",reponse[:4])
 
 
 	//reception de publicKey et création du message publicKeyReply
 	publicKey := make([]byte, 1024)
+	err = conn.SetReadDeadline(time.Now().Add(2000 * time.Millisecond))
+	if err != nil {
+		log.Fatalf("Timeout Set error %d\n", err)
+		return
+	}
 	n,_, err = conn.ReadFromUDP(publicKey)
 	if err != nil {
 		log.Fatalf("Read error %d", err)
 		return
 	}
-	fmt.Printf("Number of byte copied:\n%d\n\n", n)
+	fmt.Printf("Number of byte copied: %d bytes\n\n", n)
 
-	fmt.Printf("PublicKey:\n%s\n\n", publicKey[8:]) //Le body de publicKey comment à l'octet numéro 7
+	fmt.Printf("PublicKey:\n%s\n\n", publicKey[8:publicKey[6]+8]) //Le body de publicKey comment à l'octet numéro 7
 
 	fmt.Printf("PublicKeyID:\n%x\n\n", publicKey[:4])
-	//publicKey[:4] sont les 4 premiers octets du paquet UDP, soit l'id ????
+	//publicKey[:4] sont les 4 premiers octets du paquet UDP
+
+	fmt.Printf("")
+
+
 
 	fmt.Printf("PublicKeyReply\n\n")
 
@@ -196,12 +207,16 @@ func main() {
 
 	//récupération de l'ID pour le mettre dans publicKeyReply
 	IdPub := publicKey[:4]
+
 	//On fixe les autres paramètres
 	Type[0] = 129
 	Length[0] = 0
 	Length[1] = 0
 
 	publicKeyReply := append(append(append([]byte(IdPub), []byte(Type)...),[]byte(Length) ...))
+	
+	fmt.Printf("IdPubKeyReply = \n%x\n\n",publicKeyReply[:4])
+
 	//On envoie le paquet
 	_, err = conn.Write( publicKeyReply )  // _ = on ne donne pas de nom à la variable car on ne veut pas l'utiliser
 	if err != nil {
@@ -209,10 +224,28 @@ func main() {
 		return
 	}
 
+	//écoute du root
+	root := make([]byte, 1024)
+	err = conn.SetReadDeadline(time.Now().Add(2000 * time.Millisecond))
+	if err != nil {
+		log.Fatalf("Timeout Set error %d\n", err)
+		return
+	}
+	n,_, err = conn.ReadFromUDP(root)
+	if err != nil {
+		log.Fatalf("Read error %d", err)
+		return
+	}
+	fmt.Printf("Number of byte copied in response root:\n%d\n\n", n)
+	fmt.Printf("root:\n%x\n", root[7:39])
+	fmt.Printf("Type of root message : %x\n\n",root[4])
+	fmt.Printf("rootId = \n%x\n\n",root[:4])
+	//patched
 
-	//envoi de notre hash(racine) : 0 pour le moment car on n'exporte aucun fichier
 	
-	Type[0] = 2 //c'est le type de root
+	//envoi de notre hash(racine) : 0 pour le moment car on n'exporte aucun fichier
+	IdRoot := root[:4]
+	Type[0] = 130 //c'est le type de rootReply
 	hashEmptyRoot := make([]byte,32)
 	binary.BigEndian.PutUint16(Length[0:], uint16(len(hashEmptyRoot)))
 
@@ -221,16 +254,14 @@ func main() {
 	binary.BigEndian.PutUint64(hashEmptyRoot[0:8], uint64(0xe3b0c44298fc1c14))
 	binary.BigEndian.PutUint64(hashEmptyRoot[8:16], uint64(0x9afbf4c8996fb924))
 	binary.BigEndian.PutUint64(hashEmptyRoot[16:24], uint64(0x27ae41e4649b934c))
-	binary.BigEndian.PutUint64(hashEmptyRoot[24:32], uint64(0xa495991b7852b855))
+	binary.BigEndian.PutUint64(hashEmptyRoot[24:32], uint64(0xa495991b7852b856/*5*/))
 
 
 
 	fmt.Printf("len(hash)=%d\n",len(hashEmptyRoot))
 	fmt.Printf("hashEmptyRoot :\n0x%x\n\n",hashEmptyRoot[0:32])
 	//fmt.Printf("0x%s\n\n",hashEmptyRootStr) //test pour vérifier que l'entrée a bien été faite
-	
-
-	rootMessage := append(append(append([]byte(Id), []byte(Type)...),[]byte(Length) ...),[]byte(hashEmptyRoot)...)
+	rootMessage := append(append(append([]byte(IdRoot), []byte(Type)...),[]byte(Length) ...),[]byte(hashEmptyRoot)...) //rootReply
 	//On envoie le paquet
 	n, err = conn.Write( rootMessage )  // _ = on ne donne pas de nom à la variable car on ne veut pas l'utiliser
 	if err != nil {
@@ -239,17 +270,22 @@ func main() {
 	}
 	fmt.Printf("Written bytes in root message: %d\nNormaly 39 : 7 for the header and 32 for the hash\n\n", n)
 
-	//écoute du root reply
-	//apparement le type de rootReply est aussi 2 et non pas 130
-	rootReply := make([]byte, 1024)
-	n,_, err = conn.ReadFromUDP(rootReply)
+	/*
+	//test pour voir s'il nous envoie encore des requettes
+	stillReq := make([]byte, 1024)
+	err = conn.SetReadDeadline(time.Now().Add(2000 * time.Millisecond))
+	if err != nil {
+		log.Fatalf("Timeout Set error %d\n", err)
+		return
+	}
+	n,_, err = conn.ReadFromUDP(stillReq)
 	if err != nil {
 		log.Fatalf("Read error %d", err)
 		return
 	}
-	fmt.Printf("Number of byte copied in response rootReply:\n%d\n\n", n)
-	fmt.Printf("rootReply:\n%x\n\n", rootReply[7:39])
-	//Euh... pourquoi c'est le root de jch qu'on récupère??? ça ne colle pas avec le sujet
+	fmt.Printf("S'il y a encore des req, c'est une %x\n\n",stillReq[5])
+	*/
+	//testé, le serveur ne nous envoie bien plus aucun message
 
 
 
@@ -269,6 +305,8 @@ func main() {
 	}
 
 	body, err = ioutil.ReadAll(r.Body)
+	fmt.Printf("Code réponse HTTP : %d\n",r.StatusCode)
+	//https://pkg.go.dev/net/http#Response
 	r.Body.Close()
 
 	if err != nil {
@@ -276,6 +314,25 @@ func main() {
 		return
 	}
 
-	fmt.Printf("rep adresse :\n%s\n",string(body)) //étrange pour le moment n'affiche rien..
+	fmt.Printf("rep adresse :\n%x\n",body) //étrange pour le moment n'affiche rien..
 
 }
+
+
+/*
+Schéma général enregistrement:
+
+Client 					Serveur
+
+ ---------- hello -------->
+ <----------helloReply-----
+ 
+ <-------publicKey---------
+ ------- publicKeyReply--->
+
+ <-----------root---------- (get root)
+ --------rootReply ------->
+
+ ça y est on est enregistrés normalement
+
+*/
