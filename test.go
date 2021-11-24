@@ -45,6 +45,14 @@ func BytesToMessage(tab []byte) Message {
 	return mess
 }
 
+func ExtChecker(mess Message, ext uint16) bool {
+	extmess := binary.BigEndian.Uint16(mess.Body[7:11])
+	if extmess != ext {
+		return false
+	}
+	return true
+}
+
 func main() {
 	ext := make([]byte, 4)
 	name := "panic"
