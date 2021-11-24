@@ -45,9 +45,20 @@ func BytesToMessage(tab []byte) Message {
 	return mess
 }
 
-func ExtChecker(mess Message, ext uint16) bool {
-	extmess := binary.BigEndian.Uint16(mess.Body[7:11])
+func ExtChecker(mess Message, ext uint32) bool {
+	extmess := binary.BigEndian.Uint32(mess.Body[7:11])
 	if extmess != ext {
+		log.Fatal("Unvalid extension : expected %v , got %v\n", ext, extmess)
+		return false
+	}
+	return true
+}
+
+func TypeChecker(mess Message, typ int8) bool {
+	typB := make([]byte, 1)
+	typB[0] = byte(typ)
+	if !bytes.Equal(mess.Type, typB) {
+		log.Fatal("Unvalid type : expected %v, got %v\n", typB, mess.Type)
 		return false
 	}
 	return true
