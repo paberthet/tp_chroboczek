@@ -5,6 +5,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"log"
+	"net"
 )
 
 type Message struct {
@@ -62,6 +63,14 @@ func TypeChecker(mess Message, typ int8) bool {
 		return false
 	}
 	return true
+}
+
+func MessageSender(conn net.Conn, mess Message) {
+	byt := MessageToBytes(mess)
+	_, err := conn.Write(byt)
+	if err != nil {
+		log.Fatal("Failed to send message %v to connexion %v", mess, conn)
+	}
 }
 
 func main() {
