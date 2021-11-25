@@ -6,6 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"time"
+	//"io/outil"
+	//"crypto/tls"
+	//"net/http"
 )
 
 type Message struct {
@@ -65,12 +69,26 @@ func TypeChecker(mess Message, typ int8) bool {
 	return true
 }
 
-func MessageSender(conn net.Conn, mess Message) {
+func MessageSender(conn *net.UDPConn, mess Message) {
 	byt := MessageToBytes(mess)
 	_, err := conn.Write(byt)
 	if err != nil {
 		log.Fatal("Failed to send message %v to connexion %v", mess, conn)
 	}
+}
+
+func MessageListener(conn *net.UDPConn) Message {
+	messB := make([]byte, 1024)
+	err := conn.SetReadDeadline(time.Now().Add(2000 * time.Millisecond))
+	if err != nil {
+		log.Fatalf("Timeout Set error %d\n", err)
+	}
+	_, _, err = conn.ReadFromUDP(messB)
+	if err != nil {
+		log.Fatalf("Read error %d", err)
+	}
+	mess := NewMessage(messB[:4], messB[4:5], messB[5:7], messB[7:])
+	return mess
 }
 
 func main() {
