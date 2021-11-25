@@ -19,6 +19,10 @@ type Message struct {
 	Body   []byte
 }
 
+var serveurUrl = "jch.irif.fr:8082"
+var jchPeersAddr = "https://jch.irif.fr:8082/peers/"
+var jchRootAddr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
+
 func NewMessage(I []byte, T []byte, L []byte, B []byte) Message {
 	Longueur := make([]byte, 2)
 	if len(I) != 4 {
@@ -53,7 +57,7 @@ func BytesToMessage(tab []byte) Message {
 func ExtChecker(mess Message, ext uint32) bool {
 	extmess := binary.BigEndian.Uint32(mess.Body[7:11])
 	if extmess != ext {
-		log.Fatal("Unvalid extension : expected %v , got %v\n", ext, extmess)
+		log.Printf("Unvalid extension : expected %v , got %v\n", ext, extmess)
 		return false
 	}
 	return true
@@ -63,7 +67,7 @@ func TypeChecker(mess Message, typ int8) bool {
 	typB := make([]byte, 1)
 	typB[0] = byte(typ)
 	if !bytes.Equal(mess.Type, typB) {
-		log.Fatal("Unvalid type : expected %v, got %v\n", typB, mess.Type)
+		log.Printf("Unvalid type : expected %v, got %v\n", typB, mess.Type)
 		return false
 	}
 	return true
@@ -73,7 +77,8 @@ func MessageSender(conn *net.UDPConn, mess Message) {
 	byt := MessageToBytes(mess)
 	_, err := conn.Write(byt)
 	if err != nil {
-		log.Fatal("Failed to send message %v to connexion %v", mess, conn)
+		log.Printf("Failed to send message %v to connexion %v", mess, conn)
+		return
 	}
 }
 
@@ -87,7 +92,9 @@ func MessageListener(conn *net.UDPConn) Message {
 	if err != nil {
 		log.Fatalf("Read error %d", err)
 	}
-	mess := NewMessage(messB[:4], messB[4:5], messB[5:7], messB[7:])
+	//on va tronquer messB car on risque des pbs de diff entre la longueur de messB (1024) et la longueur réelle du message
+	upper := 7 + binary.BigEndian.Uint16(messB[5:7])
+	mess := NewMessage(messB[:4], messB[4:5], messB[5:7], messB[7:upper])
 	return mess
 }
 
@@ -111,6 +118,18 @@ func main() {
 	fmt.Printf("%v", mess)
 	messO := MessageToBytes(mess)
 	fmt.Printf("%v", messO)
-	mess = BytesToMessage(messO)
-	fmt.Printf("%v", mess)
+	messM := BytesToMessage(messO)
+	fmt.Printf("%v", messM)
+
+	raddr, _ := net.ResolveUDPAddr("udp", serveurUrl)
+	conn, errD := net.DialUDP("udp", nil, raddr)
+	if errD != nil {
+		log.Fatalf("Connection error %v\n", errD)
+		return
+	}
+	defer conn.Close()
+
+	MessageSender(conn, mess)
+	respsonse := MessageListener(conn)
+	fmt.Printf("%v \n", respsonse)
 }
