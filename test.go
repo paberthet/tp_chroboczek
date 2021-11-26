@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"time"
+	"syscall"
 	//"io/outil"
 	//"crypto/tls"
 	//"net/http"
@@ -22,6 +23,8 @@ type Message struct {
 var serveurUrl = "jch.irif.fr:8082"
 var jchPeersAddr = "https://jch.irif.fr:8082/peers/"
 var jchRootAddr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
+
+
 
 func NewMessage(I []byte, T []byte, L []byte, B []byte) Message {
 	Longueur := make([]byte, 2)
@@ -63,7 +66,15 @@ func ExtChecker(mess Message, ext uint32) bool {
 	return true
 }
 
-func TypeChecker(mess Message, typ int8) bool {
+func ErrorMessageSender(mess Message, str string, conn *net.UDPConn) { // génère message d'erreur à partir d'un message erroné
+	mess.Type[0] = byte(254)
+	tmp := []byte(str)
+	mess.Body = tmp
+	binary.BigEndian.PutUint16(mess.Length[0:], uint16( len(tmp) ) ) 
+	MessageSender( conn , mess )
+}
+
+func TypeChecker(mess Message, typ int16) bool {
 	typB := make([]byte, 1)
 	typB[0] = byte(typ)
 	if !bytes.Equal(mess.Type, typB) {
@@ -99,6 +110,15 @@ func MessageListener(conn *net.UDPConn) Message {
 }
 
 func main() {
+
+	hashEmptyRoot := make([]byte,32)
+	//var hashEmptyRootStr string = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+	//c'est sale de le faire à la main mais c'est pour le test
+	binary.BigEndian.PutUint64(hashEmptyRoot[0:8], uint64(0xe3b0c44298fc1c14))
+	binary.BigEndian.PutUint64(hashEmptyRoot[8:16], uint64(0x9afbf4c8996fb924))
+	binary.BigEndian.PutUint64(hashEmptyRoot[16:24], uint64(0x27ae41e4649b934c))
+	binary.BigEndian.PutUint64(hashEmptyRoot[24:32], uint64(0xa495991b7852b856/*5*/))
+
 	ext := make([]byte, 4)
 	name := "panic"
 	hello := append(ext, []byte(name)...)
@@ -114,12 +134,7 @@ func main() {
 	Length := make([]byte, 2)
 	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
 
-	mess := NewMessage(Id, Type, Length, hello)
-	fmt.Printf("%v", mess)
-	messO := MessageToBytes(mess)
-	fmt.Printf("%v", messO)
-	messM := BytesToMessage(messO)
-	fmt.Printf("%v", messM)
+	helloMess := NewMessage(Id, Type, Length, hello)
 
 	raddr, _ := net.ResolveUDPAddr("udp", serveurUrl)
 	conn, errD := net.DialUDP("udp", nil, raddr)
@@ -129,7 +144,52 @@ func main() {
 	}
 	defer conn.Close()
 
-	MessageSender(conn, mess)
-	respsonse := MessageListener(conn)
-	fmt.Printf("%v \n", respsonse)
+	MessageSender(conn, helloMess)
+	response := MessageListener(conn)
+	fmt.Printf("%v \n", response)
+
+	if TypeChecker(response, 128) == false {
+		ErrorMessageSender( response, "Bad type\n", conn )
+	}
+
+	//Publickey + PublicKeyReply
+
+	response = MessageListener(conn)
+	if TypeChecker(response, 1) == false {
+		ErrorMessageSender( response, "Bad type\n", conn )
+	}
+	fmt.Printf("%v \n", response)
+	response.Type[0] = byte(129)
+	MessageSender(conn, response)
+
+	//root + rootReply
+
+	response = MessageListener(conn)
+	if TypeChecker(response, 2) == false {
+		ErrorMessageSender( response, "Bad type\n", conn )
+	}
+	fmt.Printf("%v \n", response)
+	response.Body = hashEmptyRoot
+	response.Type[0] = byte(130)
+
+	MessageSender(conn, response)
+
+
+	//Une fois enregistré, le serveur n'envoie qu'un helloReply en réponse au hello, pas le pubKey ni root.
+	//On peut donc juste se contenter de d'ignorer les helloReply reçus
+
+
+	id, _, _ := syscall.Syscall(syscall.SYS_FORK, 0, 0, 0)
+    if id == 0 {
+    	log.Printf("In child\n")
+    	for {
+    		time.Sleep( 30 * time.Second)
+    		MessageSender( conn , helloMess)
+    	}
+    } else {
+    	log.Printf( "Child id : %d", id )
+    	time.Sleep(60 * time.Second)
+    	syscall.Kill(int(id), 9)
+    }
+
 }
