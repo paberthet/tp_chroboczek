@@ -8,9 +8,9 @@ import (
 	"net"
 	"time"
 	"syscall"
-	//"io/outil"
-	//"crypto/tls"
-	//"net/http"
+	"io/ioutil"
+	"crypto/tls"
+	"net/http"
 )
 
 type Message struct {
@@ -109,7 +109,94 @@ func MessageListener(conn *net.UDPConn) Message {
 	return mess
 }
 
+//Method = "GET", ou "POST", ou ...
+func httpRequest( method, addr string, client http.Client ) ( []byte, error )  {
+	req, err := http.NewRequest(method, addr, nil)
+	bodyIfErr := make([]byte,1)
+
+	if err != nil {
+		log.Printf("NewRequest: %v", err)
+		return bodyIfErr, err
+	}
+
+	r, err := client.Do(req)
+	if err != nil {
+		log.Printf("Get: %v", err)
+		return bodyIfErr, err
+	}
+
+	body, err := ioutil.ReadAll(r.Body)
+	r.Body.Close()
+
+	if err != nil {
+		log.Printf("Read: %v", err)
+		return bodyIfErr, err
+	}
+
+	return body, nil
+}
+
+func parsePrint( body []byte , toPrint string) {
+	ids := bytes.Split(body, []byte{byte('\n')})
+	//fmt.Printf("%v\n",string(ids[0]))
+
+	if len(ids) > 0 {
+		//fmt.Printf("len(ids) : %d", len(ids))
+		last := len(ids) - 1
+		if len(ids[last]) == 0 {
+			ids = ids[:last]
+			/*attention ids = isd [a,b] veut dire que dans ids, on ne garde que les éléments
+			d'indices allant de a jusqu'à b-1. Avant correction de ids=ids[:last-1],
+			ids devenait vide et c'est pour cela que rien n'était affiché.
+			En fait dans le TP initial on devait perdre à chaque fois le dernier message
+			car le derier id étai tsupprimé en même temps que le cararactère \n
+			qui symbolisait la fin de la liste
+			*/
+		}
+		//fmt.Printf("len(ids) : %d", len(ids))
+	}
+	for i, id := range ids {
+		fmt.Printf("%v %v: %v\n", i,toPrint, string(id))
+	}
+	return
+}
+
 func main() {
+
+	//Préparation des requettes REST
+	transport := &*http.DefaultTransport.(*http.Transport)
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	client := &http.Client{
+		Transport: transport,
+		Timeout:   50 * time.Second,
+	}
+
+
+
+	//Récupération des pairs
+	body, err := httpRequest("GET", jchPeersAddr, *client)
+	if( err != nil){
+		log.Fatalf("Error get peers : %v\n", err)
+		return
+	}
+
+	//affichage des pairs
+	parsePrint(body, "peers")
+
+
+	//Récupération de root de jch
+	body, err = httpRequest("GET", jchRootAddr, *client)
+	if( err != nil){
+		log.Fatalf("Error get root : %v\n", err)
+		return
+	}
+
+	//affichage de root
+	log.Printf("\n\nroot : %v\n\n",body)
+	
+
+
+
 
 	hashEmptyRoot := make([]byte,32)
 	//var hashEmptyRootStr string = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
