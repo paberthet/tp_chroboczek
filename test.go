@@ -23,9 +23,20 @@ var serveurUrl = "jch.irif.fr:8082"
 var jchPeersAddr = "https://jch.irif.fr:8082/peers/"
 var jchRootAddr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
 
+var Id = []byte{byte(0x4), byte(0x8), byte(0x15), byte(0x16)}
+
 //================================================================================
 //						UDP Message
 //================================================================================
+
+func UDPInit(url string) *net.UDPConn {
+	raddr, _ := net.ResolveUDPAddr("udp", url)
+	conn, errD := net.DialUDP("udp", nil, raddr)
+	if errD != nil {
+		log.Fatalf("Connection error %v\n", errD)
+	}
+	return conn
+}
 
 func NewMessage(I []byte, T []byte, L []byte, B []byte) Message {
 	Longueur := make([]byte, 2)
@@ -110,6 +121,23 @@ func MessageListener(conn *net.UDPConn) Message {
 	return mess
 }
 
+func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
+	T := make([]byte, 1)
+	T[0] = byte(133)
+	L := make([]byte, 2)
+	binary.BigEndian.PutUint16(L[0:], uint16(18))
+	//B := make([]byte, 18)
+	//mess := NewMessage(Id, T, L, B)
+	checker := false
+	cmptr := 0
+	for !checker && (cmptr < len(peeraddr)) {
+		addr := peeraddr[cmptr]
+		fmt.Printf("%v -- %v\n", len(addr), string(addr))
+		cmptr++
+	}
+	return checker
+}
+
 //=====================================================================================
 //						API REST
 //=====================================================================================
@@ -164,8 +192,7 @@ func ParseREST(body []byte) [][]byte {
 	return ids
 }
 
-func PeerSelector(ids [][]byte, client http.Client) *net.UDPAddr {
-	var addrUDP *net.UDPAddr
+func PeerSelector(ids [][]byte, client http.Client) [][]byte {
 	for i, id := range ids {
 		fmt.Printf("%v %v: %v\n", i, "peers", string(id))
 	}
@@ -177,13 +204,7 @@ func PeerSelector(ids [][]byte, client http.Client) *net.UDPAddr {
 		log.Fatalf("Error get peers addresses: %v\n", err)
 	}
 	reponse2 := ParseREST(reponse)
-	//addr = net.UDPAddr(addr)
-	addrUDP, err = net.ResolveUDPAddr("udp", string(reponse2[0]))
-	if err != nil {
-		log.Fatalf("UDP Error connection to peer : %v\n", err)
-	}
-	fmt.Printf("%v\n", addrUDP)
-	return addrUDP
+	return reponse2
 }
 
 //===================================================================================================
@@ -241,7 +262,7 @@ func main() {
 	//affichage des pairs
 	peertable = ParseREST(body)
 
-	PeerSelector(peertable, *client)
+	peertable = PeerSelector(peertable, *client)
 
 	//Récupération de root de jch
 	body, err = HttpRequest("GET", jchRootAddr, *client)
@@ -251,7 +272,7 @@ func main() {
 	}
 
 	//affichage de root
-	//log.Printf("\n\nroot : %v\n\n", body)
+	log.Printf("\n\nroot : %v\n\n", body)
 
 	hashEmptyRoot := make([]byte, 32)
 	//var hashEmptyRootStr string = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -265,12 +286,6 @@ func main() {
 	name := "panic"
 	hello := append(ext, []byte(name)...)
 
-	Id := make([]byte, 4)
-	Id[0] = 0x4
-	Id[1] = 0x8
-	Id[2] = 0x15
-	Id[3] = 0x16
-
 	Type := make([]byte, 1)
 	Type[0] = 0
 	Length := make([]byte, 2)
@@ -278,12 +293,7 @@ func main() {
 
 	helloMess := NewMessage(Id, Type, Length, hello)
 
-	raddr, _ := net.ResolveUDPAddr("udp", serveurUrl)
-	conn, errD := net.DialUDP("udp", nil, raddr)
-	if errD != nil {
-		log.Fatalf("Connection error %v\n", errD)
-		return
-	}
+	conn := UDPInit(serveurUrl)
 	defer conn.Close()
 
 	MessageSender(conn, helloMess)
@@ -310,7 +320,8 @@ func main() {
 	}
 	response.Body = hashEmptyRoot
 	response.Type[0] = byte(130)
-
 	MessageSender(conn, response)
+
+	NATTravMessage(peertable, conn)
 
 }
