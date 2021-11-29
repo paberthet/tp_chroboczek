@@ -196,15 +196,15 @@ func DHKeyExchange() {
 	return
 }
 
-func AESEncrypt() {
+func AESEncrypt() []byte {
 	/*
 		AES-256 en CBC ou GSM. Pour avoir une clé de 256bits, on fait un SHA256 du secret partagé (SHA256 output 256 bits non?)
 	*/
-	return
+	return nil
 }
 
-func AESDecrypt() {
-
+func AESDecrypt() []byte {
+	return nil
 }
 
 //==================================================================================================
@@ -292,8 +292,8 @@ func main() {
 	//root + rootReply
 
 	response = MessageListener(conn)
-	if TypeChecker(response, 2) == false {
-		ErrorMessageSender(response, "Bad type\n", conn)
+	if TypeChecker(response, 5) == false {
+		ErrorMessageSender(response, "Comment allez vous?\n", conn)
 	}
 	fmt.Printf("%v \n", response)
 	response.Body = hashEmptyRoot
