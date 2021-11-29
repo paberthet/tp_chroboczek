@@ -2,15 +2,15 @@ package main
 
 import (
 	"bytes"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
+	"io/ioutil"
 	"log"
 	"net"
-	"time"
-	"syscall"
-	"io/ioutil"
-	"crypto/tls"
 	"net/http"
+	"syscall"
+	"time"
 )
 
 type Message struct {
@@ -24,7 +24,9 @@ var serveurUrl = "jch.irif.fr:8082"
 var jchPeersAddr = "https://jch.irif.fr:8082/peers/"
 var jchRootAddr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
 
-
+//================================================================================
+//						UDP Message
+//================================================================================
 
 func NewMessage(I []byte, T []byte, L []byte, B []byte) Message {
 	Longueur := make([]byte, 2)
@@ -70,8 +72,8 @@ func ErrorMessageSender(mess Message, str string, conn *net.UDPConn) { // génè
 	mess.Type[0] = byte(254)
 	tmp := []byte(str)
 	mess.Body = tmp
-	binary.BigEndian.PutUint16(mess.Length[0:], uint16( len(tmp) ) ) 
-	MessageSender( conn , mess )
+	binary.BigEndian.PutUint16(mess.Length[0:], uint16(len(tmp)))
+	MessageSender(conn, mess)
 }
 
 func TypeChecker(mess Message, typ int16) bool {
@@ -109,10 +111,14 @@ func MessageListener(conn *net.UDPConn) Message {
 	return mess
 }
 
+//=====================================================================================
+//						API REST
+//=====================================================================================
+
 //Method = "GET", ou "POST", ou ...
-func httpRequest( method, addr string, client http.Client ) ( []byte, error )  {
+func httpRequest(method, addr string, client http.Client) ([]byte, error) {
 	req, err := http.NewRequest(method, addr, nil)
-	bodyIfErr := make([]byte,1)
+	bodyIfErr := make([]byte, 1)
 
 	if err != nil {
 		log.Printf("NewRequest: %v", err)
@@ -136,7 +142,7 @@ func httpRequest( method, addr string, client http.Client ) ( []byte, error )  {
 	return body, nil
 }
 
-func parsePrint( body []byte , toPrint string) {
+func parsePrint(body []byte, toPrint string) [][]byte {
 	ids := bytes.Split(body, []byte{byte('\n')})
 	//fmt.Printf("%v\n",string(ids[0]))
 
@@ -156,11 +162,53 @@ func parsePrint( body []byte , toPrint string) {
 		//fmt.Printf("len(ids) : %d", len(ids))
 	}
 	for i, id := range ids {
-		fmt.Printf("%v %v: %v\n", i,toPrint, string(id))
+		fmt.Printf("%v %v: %v\n", i, toPrint, string(id))
 	}
+	return ids
+}
+
+func PeerSelector([][]byte) {
+	/*
+		ici on prend en paramètre le tableau peer adresses et on demande au user le peer auquel il veut se connecter. Puis on lance la connexion UDP avec ce peer
+	*/
 	return
 }
 
+//===================================================================================================
+//									Merkle s tree
+//===================================================================================================
+
+func TreeParser() {
+	return
+}
+
+func TreeChecker() {
+	return
+}
+
+//====================================================================================================
+//								Sécurité
+//====================================================================================================
+
+func DHKeyExchange() {
+	/*
+		ici on génère g^a , on l'envoie via un message avec un type (qu il faudra réserver sur la mailing list), et on attend le reply qui contient g^b. Le return contient le secret partagé
+	*/
+	return
+}
+
+func AESEncrypt() {
+	/*
+		AES-256 en CBC ou GSM. Pour avoir une clé de 256bits, on fait un SHA256 du secret partagé (SHA256 output 256 bits non?)
+	*/
+	return
+}
+
+func AESDecrypt() {
+
+}
+
+//==================================================================================================
 func main() {
 
 	//Préparation des requettes REST
@@ -171,11 +219,9 @@ func main() {
 		Timeout:   50 * time.Second,
 	}
 
-
-
 	//Récupération des pairs
 	body, err := httpRequest("GET", jchPeersAddr, *client)
-	if( err != nil){
+	if err != nil {
 		log.Fatalf("Error get peers : %v\n", err)
 		return
 	}
@@ -183,28 +229,23 @@ func main() {
 	//affichage des pairs
 	parsePrint(body, "peers")
 
-
 	//Récupération de root de jch
 	body, err = httpRequest("GET", jchRootAddr, *client)
-	if( err != nil){
+	if err != nil {
 		log.Fatalf("Error get root : %v\n", err)
 		return
 	}
 
 	//affichage de root
-	log.Printf("\n\nroot : %v\n\n",body)
-	
+	log.Printf("\n\nroot : %v\n\n", body)
 
-
-
-
-	hashEmptyRoot := make([]byte,32)
+	hashEmptyRoot := make([]byte, 32)
 	//var hashEmptyRootStr string = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	//c'est sale de le faire à la main mais c'est pour le test
 	binary.BigEndian.PutUint64(hashEmptyRoot[0:8], uint64(0xe3b0c44298fc1c14))
 	binary.BigEndian.PutUint64(hashEmptyRoot[8:16], uint64(0x9afbf4c8996fb924))
 	binary.BigEndian.PutUint64(hashEmptyRoot[16:24], uint64(0x27ae41e4649b934c))
-	binary.BigEndian.PutUint64(hashEmptyRoot[24:32], uint64(0xa495991b7852b856/*5*/))
+	binary.BigEndian.PutUint64(hashEmptyRoot[24:32], uint64(0xa495991b7852b856 /*5*/))
 
 	ext := make([]byte, 4)
 	name := "panic"
@@ -236,14 +277,14 @@ func main() {
 	fmt.Printf("%v \n", response)
 
 	if TypeChecker(response, 128) == false {
-		ErrorMessageSender( response, "Bad type\n", conn )
+		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 
 	//Publickey + PublicKeyReply
 
 	response = MessageListener(conn)
 	if TypeChecker(response, 1) == false {
-		ErrorMessageSender( response, "Bad type\n", conn )
+		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	fmt.Printf("%v \n", response)
 	response.Type[0] = byte(129)
@@ -253,7 +294,7 @@ func main() {
 
 	response = MessageListener(conn)
 	if TypeChecker(response, 2) == false {
-		ErrorMessageSender( response, "Bad type\n", conn )
+		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	fmt.Printf("%v \n", response)
 	response.Body = hashEmptyRoot
@@ -261,22 +302,20 @@ func main() {
 
 	MessageSender(conn, response)
 
-
 	//Une fois enregistré, le serveur n'envoie qu'un helloReply en réponse au hello, pas le pubKey ni root.
 	//On peut donc juste se contenter de d'ignorer les helloReply reçus
 
-
 	id, _, _ := syscall.Syscall(syscall.SYS_FORK, 0, 0, 0)
-    if id == 0 {
-    	log.Printf("In child\n")
-    	for {
-    		time.Sleep( 30 * time.Second)
-    		MessageSender( conn , helloMess)
-    	}
-    } else {
-    	log.Printf( "Child id : %d", id )
-    	time.Sleep(60 * time.Second)
-    	syscall.Kill(int(id), 9)
-    }
+	if id == 0 {
+		log.Printf("In child\n")
+		for {
+			time.Sleep(30 * time.Second)
+			MessageSender(conn, helloMess)
+		}
+	} else {
+		log.Printf("Child id : %d", id)
+		time.Sleep(60 * time.Second)
+		syscall.Kill(int(id), 9)
+	}
 
 }
