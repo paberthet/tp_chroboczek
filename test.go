@@ -23,7 +23,23 @@ var serveurUrl = "jch.irif.fr:8082"
 var jchPeersAddr = "https://jch.irif.fr:8082/peers/"
 var jchRootAddr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
 
-var Id = []byte{byte(0x4), byte(0x8), byte(0x15), byte(0x16)}
+var Id = []byte{byte(0x4), byte(0x8), byte(0xf), byte(0x10)}
+
+/*
+Idée:
+est ce qu'on ne ferait pas une fonction écoute, lancée par un go au début du programme,
+et qui écoute en boucle si on recoit des messages ou non, et si elle recoit un message elle réagit
+en fonction du type qu'elle lit dans le message reçu (une sorte de switch)?
+
+Par contre il faudrait retirer les log.Fatalf de MessageListner et lui faire retourner err en plus, 
+sinon à la première écoute sans réponse ça va crasher,
+Ou alors ne pas définir de Deadline sur l'écoute ?
+*/
+
+
+
+
+
 
 //================================================================================
 //						UDP Message
@@ -126,13 +142,70 @@ func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
 	T[0] = byte(133)
 	L := make([]byte, 2)
 	binary.BigEndian.PutUint16(L[0:], uint16(18))
-	//B := make([]byte, 18)
-	//mess := NewMessage(Id, T, L, B)
+	B := make([]byte, 18)
+	mess := NewMessage(Id, T, L, B)
 	checker := false
 	cmptr := 0
+
+	/*
+
+	//préparation en amont du message Hello, 
+	ext := make([]byte, 4)
+	name := "panic"
+	hello := append(ext, []byte(name)...)
+
+	Type := make([]byte, 1)
+	Type[0] = 0
+	Length := make([]byte, 2)
+	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
+
+	helloMess := NewMessage(Id, Type, Length, hello)
+	//Fin préparation du Hello
+	*/
+
 	for !checker && (cmptr < len(peeraddr)) {
-		addr := peeraddr[cmptr]
-		fmt.Printf("%v -- %v\n", len(addr), string(addr))
+		addr,_ := net.ResolveUDPAddr("udp",string(peeraddr[cmptr]))
+		fmt.Printf("len : %v addr : %v addr bytes : %v\n",len(addr.IP), addr.IP, []byte(addr.IP))
+		test_port := make([]byte, 2)
+		binary.BigEndian.PutUint16(test_port[0:], uint16(addr.Port))
+		fmt.Printf("port : %v port bytes %v\n",addr.Port, test_port)
+
+
+		//Ok c'est bon, en fait la conversion en ipv4 mapped se fait toute seule par UDP resolve
+		port := make([]byte,2)
+		binary.BigEndian.PutUint16(port[0:], uint16(addr.Port))
+		ip := append([]byte(addr.IP),port...)
+		mess.Body = ip
+		
+		fmt.Printf("Message construit : %v\n\n", mess)
+
+		/*
+
+		//Envoie de la requette de traversée de NAT au serveur
+		MessageSender(conn, mess)
+		//Attente que la demande soit transmise au client par le serveur
+		time.Sleep(1*time.Second)
+		//Envoi d'un Hello au client
+		connP2P, errD := net.DialUDP("udp", nil, addr) //On ne peut pas faire appel à UDPinit telle qu'elle est définie actuellement
+		if errD == nil {
+			defer connP2P.Close() //Bizarre de faire ça là en sachant qu'on ne pourra pas y faire appel en dehors, il faudrait peut être renvoyer l'adresse avec laquell eon a réussi à traverser le NAT plutôt qu'un bool
+
+			//Envoi du Hello
+			MessageSender(connP2P, helloMess)
+			//Ecoute si Hello du client
+			rep := MessageListener(conn) //Pb ici, on voudrait pouvoir passer à la suite si on n'a pas de retour, mais ici à cause des log.Fatalf ça va crash si on n'a pas de retour
+			//si on a un retour
+				rep.Type[0]=128 //type de hello reply, on utilise rep car il y a deja le bon id dedans
+				MessageSender(connP2P, rep)
+				//on peut aussi écouter le helloReply qu'on est censés recevoir en retour de notre hello
+				rep = MessageListener(connP2P)
+				//à ce moment là le NAT est traversé, on peut dialoguer directement avec le client, je pense qu'il faudrait faire un return connP2P
+		}
+		//et sinon, si on n'a pas réussi les étapes précédentes, on passe à l'adresse suivante.
+
+		*/
+		
+
 		cmptr++
 	}
 	return checker
