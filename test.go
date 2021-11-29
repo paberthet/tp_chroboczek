@@ -9,7 +9,6 @@ import (
 	"log"
 	"net"
 	"net/http"
-	"syscall"
 	"time"
 )
 
@@ -301,21 +300,4 @@ func main() {
 	response.Type[0] = byte(130)
 
 	MessageSender(conn, response)
-
-	//Une fois enregistré, le serveur n'envoie qu'un helloReply en réponse au hello, pas le pubKey ni root.
-	//On peut donc juste se contenter de d'ignorer les helloReply reçus
-
-	id, _, _ := syscall.Syscall(syscall.SYS_FORK, 0, 0, 0)
-	if id == 0 {
-		log.Printf("In child\n")
-		for {
-			time.Sleep(30 * time.Second)
-			MessageSender(conn, helloMess)
-		}
-	} else {
-		log.Printf("Child id : %d", id)
-		time.Sleep(60 * time.Second)
-		syscall.Kill(int(id), 9)
-	}
-
 }
