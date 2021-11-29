@@ -115,7 +115,7 @@ func MessageListener(conn *net.UDPConn) Message {
 //=====================================================================================
 
 //Method = "GET", ou "POST", ou ...
-func httpRequest(method, addr string, client http.Client) ([]byte, error) {
+func HttpRequest(method, addr string, client http.Client) ([]byte, error) {
 	req, err := http.NewRequest(method, addr, nil)
 	bodyIfErr := make([]byte, 1)
 
@@ -141,7 +141,7 @@ func httpRequest(method, addr string, client http.Client) ([]byte, error) {
 	return body, nil
 }
 
-func parsePrint(body []byte, toPrint string) [][]byte {
+func ParseREST(body []byte) [][]byte {
 	ids := bytes.Split(body, []byte{byte('\n')})
 	//fmt.Printf("%v\n",string(ids[0]))
 
@@ -160,17 +160,30 @@ func parsePrint(body []byte, toPrint string) [][]byte {
 		}
 		//fmt.Printf("len(ids) : %d", len(ids))
 	}
-	for i, id := range ids {
-		fmt.Printf("%v %v: %v\n", i, toPrint, string(id))
-	}
+
 	return ids
 }
 
-func PeerSelector([][]byte) {
-	/*
-		ici on prend en paramètre le tableau peer adresses et on demande au user le peer auquel il veut se connecter. Puis on lance la connexion UDP avec ce peer
-	*/
-	return
+func PeerSelector(ids [][]byte, client http.Client) *net.UDPAddr {
+	var addrUDP *net.UDPAddr
+	for i, id := range ids {
+		fmt.Printf("%v %v: %v\n", i, "peers", string(id))
+	}
+	//scanf
+	j := 0
+	addr := jchPeersAddr + string(ids[j]) + "/addresses"
+	reponse, err := HttpRequest("GET", addr, client)
+	if err != nil {
+		log.Fatalf("Error get peers addresses: %v\n", err)
+	}
+	reponse2 := ParseREST(reponse)
+	//addr = net.UDPAddr(addr)
+	addrUDP, err = net.ResolveUDPAddr("udp", string(reponse2[0]))
+	if err != nil {
+		log.Fatalf("UDP Error connection to peer : %v\n", err)
+	}
+	fmt.Printf("%v\n", addrUDP)
+	return addrUDP
 }
 
 //===================================================================================================
@@ -209,6 +222,7 @@ func AESDecrypt() []byte {
 
 //==================================================================================================
 func main() {
+	var peertable [][]byte
 
 	//Préparation des requettes REST
 	transport := &*http.DefaultTransport.(*http.Transport)
@@ -219,24 +233,25 @@ func main() {
 	}
 
 	//Récupération des pairs
-	body, err := httpRequest("GET", jchPeersAddr, *client)
+	body, err := HttpRequest("GET", jchPeersAddr, *client)
 	if err != nil {
 		log.Fatalf("Error get peers : %v\n", err)
 		return
 	}
-
 	//affichage des pairs
-	parsePrint(body, "peers")
+	peertable = ParseREST(body)
+
+	PeerSelector(peertable, *client)
 
 	//Récupération de root de jch
-	body, err = httpRequest("GET", jchRootAddr, *client)
+	body, err = HttpRequest("GET", jchRootAddr, *client)
 	if err != nil {
 		log.Fatalf("Error get root : %v\n", err)
 		return
 	}
 
 	//affichage de root
-	log.Printf("\n\nroot : %v\n\n", body)
+	//log.Printf("\n\nroot : %v\n\n", body)
 
 	hashEmptyRoot := make([]byte, 32)
 	//var hashEmptyRootStr string = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
@@ -273,7 +288,6 @@ func main() {
 
 	MessageSender(conn, helloMess)
 	response := MessageListener(conn)
-	fmt.Printf("%v \n", response)
 
 	if !TypeChecker(response, 128) {
 		ErrorMessageSender(response, "Bad type\n", conn)
@@ -285,7 +299,6 @@ func main() {
 	if !TypeChecker(response, 1) {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
-	fmt.Printf("%v \n", response)
 	response.Type[0] = byte(129)
 	MessageSender(conn, response)
 
@@ -295,9 +308,9 @@ func main() {
 	if !TypeChecker(response, 2) {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
-	fmt.Printf("%v \n", response)
 	response.Body = hashEmptyRoot
 	response.Type[0] = byte(130)
 
 	MessageSender(conn, response)
+
 }
