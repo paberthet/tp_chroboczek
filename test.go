@@ -275,14 +275,14 @@ func main() {
 	response := MessageListener(conn)
 	fmt.Printf("%v \n", response)
 
-	if TypeChecker(response, 128) == false {
+	if !TypeChecker(response, 128) {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 
 	//Publickey + PublicKeyReply
 
 	response = MessageListener(conn)
-	if TypeChecker(response, 1) == false {
+	if !TypeChecker(response, 1) {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	fmt.Printf("%v \n", response)
@@ -292,8 +292,8 @@ func main() {
 	//root + rootReply
 
 	response = MessageListener(conn)
-	if TypeChecker(response, 5) == false {
-		ErrorMessageSender(response, "Comment allez vous?\n", conn)
+	if !TypeChecker(response, 2) {
+		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	fmt.Printf("%v \n", response)
 	response.Body = hashEmptyRoot
