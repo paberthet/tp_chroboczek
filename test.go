@@ -2,9 +2,14 @@ package main
 
 import (
 	"bytes"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
 	"fmt"
+	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -31,15 +36,10 @@ est ce qu'on ne ferait pas une fonction écoute, lancée par un go au début du 
 et qui écoute en boucle si on recoit des messages ou non, et si elle recoit un message elle réagit
 en fonction du type qu'elle lit dans le message reçu (une sorte de switch)?
 
-Par contre il faudrait retirer les log.Fatalf de MessageListner et lui faire retourner err en plus, 
+Par contre il faudrait retirer les log.Fatalf de MessageListner et lui faire retourner err en plus,
 sinon à la première écoute sans réponse ça va crasher,
 Ou alors ne pas définir de Deadline sur l'écoute ?
 */
-
-
-
-
-
 
 //================================================================================
 //						UDP Message
@@ -149,62 +149,60 @@ func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
 
 	/*
 
-	//préparation en amont du message Hello, 
-	ext := make([]byte, 4)
-	name := "panic"
-	hello := append(ext, []byte(name)...)
+		//préparation en amont du message Hello,
+		ext := make([]byte, 4)
+		name := "panic"
+		hello := append(ext, []byte(name)...)
 
-	Type := make([]byte, 1)
-	Type[0] = 0
-	Length := make([]byte, 2)
-	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
+		Type := make([]byte, 1)
+		Type[0] = 0
+		Length := make([]byte, 2)
+		binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
 
-	helloMess := NewMessage(Id, Type, Length, hello)
-	//Fin préparation du Hello
+		helloMess := NewMessage(Id, Type, Length, hello)
+		//Fin préparation du Hello
 	*/
 
 	for !checker && (cmptr < len(peeraddr)) {
-		addr,_ := net.ResolveUDPAddr("udp",string(peeraddr[cmptr]))
-		fmt.Printf("len : %v addr : %v addr bytes : %v\n",len(addr.IP), addr.IP, []byte(addr.IP))
+		addr, _ := net.ResolveUDPAddr("udp", string(peeraddr[cmptr]))
+		fmt.Printf("len : %v addr : %v addr bytes : %v\n", len(addr.IP), addr.IP, []byte(addr.IP))
 		test_port := make([]byte, 2)
 		binary.BigEndian.PutUint16(test_port[0:], uint16(addr.Port))
-		fmt.Printf("port : %v port bytes %v\n",addr.Port, test_port)
-
+		fmt.Printf("port : %v port bytes %v\n", addr.Port, test_port)
 
 		//Ok c'est bon, en fait la conversion en ipv4 mapped se fait toute seule par UDP resolve
-		port := make([]byte,2)
+		port := make([]byte, 2)
 		binary.BigEndian.PutUint16(port[0:], uint16(addr.Port))
-		ip := append([]byte(addr.IP),port...)
+		ip := append([]byte(addr.IP), port...)
 		mess.Body = ip
-		
+
 		fmt.Printf("Message construit : %v\n\n", mess)
 
 		/*
 
-		//Envoie de la requette de traversée de NAT au serveur
-		MessageSender(conn, mess)
-		//Attente que la demande soit transmise au client par le serveur
-		time.Sleep(1*time.Second)
-		//Envoi d'un Hello au client
-		connP2P, errD := net.DialUDP("udp", nil, addr) //On ne peut pas faire appel à UDPinit telle qu'elle est définie actuellement
-		if errD == nil {
-			defer connP2P.Close() //Bizarre de faire ça là en sachant qu'on ne pourra pas y faire appel en dehors, il faudrait peut être renvoyer l'adresse avec laquell eon a réussi à traverser le NAT plutôt qu'un bool
+			//Envoie de la requette de traversée de NAT au serveur
+			MessageSender(conn, mess)
+			//Attente que la demande soit transmise au client par le serveur
+			time.Sleep(1*time.Second)
+			//Envoi d'un Hello au client
+			connP2P, errD := net.DialUDP("udp", nil, addr) //On ne peut pas faire appel à UDPinit telle qu'elle est définie actuellement
+			if errD == nil {
+				defer connP2P.Close() //Bizarre de faire ça là en sachant qu'on ne pourra pas y faire appel en dehors, il faudrait peut être renvoyer l'adresse avec laquell eon a réussi à traverser le NAT plutôt qu'un bool
 
-			//Envoi du Hello
-			MessageSender(connP2P, helloMess)
-			//Ecoute si Hello du client
-			rep := MessageListener(conn) //Pb ici, on voudrait pouvoir passer à la suite si on n'a pas de retour, mais ici à cause des log.Fatalf ça va crash si on n'a pas de retour
-			//si on a un retour
-				rep.Type[0]=128 //type de hello reply, on utilise rep car il y a deja le bon id dedans
-				MessageSender(connP2P, rep)
-				//on peut aussi écouter le helloReply qu'on est censés recevoir en retour de notre hello
-				rep = MessageListener(connP2P)
-				//à ce moment là le NAT est traversé, on peut dialoguer directement avec le client, je pense qu'il faudrait faire un return connP2P
-		}
-		//et sinon, si on n'a pas réussi les étapes précédentes, on passe à l'adresse suivante.
+				//Envoi du Hello
+				MessageSender(connP2P, helloMess)
+				//Ecoute si Hello du client
+				rep := MessageListener(conn) //Pb ici, on voudrait pouvoir passer à la suite si on n'a pas de retour, mais ici à cause des log.Fatalf ça va crash si on n'a pas de retour
+				//si on a un retour
+					rep.Type[0]=128 //type de hello reply, on utilise rep car il y a deja le bon id dedans
+					MessageSender(connP2P, rep)
+					//on peut aussi écouter le helloReply qu'on est censés recevoir en retour de notre hello
+					rep = MessageListener(connP2P)
+					//à ce moment là le NAT est traversé, on peut dialoguer directement avec le client, je pense qu'il faudrait faire un return connP2P
+			}
+			//et sinon, si on n'a pas réussi les étapes précédentes, on passe à l'adresse suivante.
 
 		*/
-		
 
 		cmptr++
 	}
@@ -284,34 +282,68 @@ func PeerSelector(ids [][]byte, client http.Client) [][]byte {
 //									Merkle s tree
 //===================================================================================================
 
-func TreeParser() {
-	return
+func FileParser() {
+	return //subdivise un fichier en chunks de 1024 bits recursivement
 }
 
-func TreeChecker() {
-	return
+//il nous faut une ou des fonctions pour construire l arbre
+//eventuellement aussi de nouveaux struct
+
+func TreeChecker() bool {
+	return false
 }
 
 //====================================================================================================
 //								Sécurité
 //====================================================================================================
 
-func DHKeyExchange() {
+func DHKeyExchange() []byte {
 	/*
 		ici on génère g^a , on l'envoie via un message avec un type (qu il faudra réserver sur la mailing list), et on attend le reply qui contient g^b. Le return contient le secret partagé
 	*/
-	return
+	return nil
 }
 
-func AESEncrypt() []byte {
+func AESEncrypt(dh []byte, data []byte, addata []byte) []byte {
 	/*
 		AES-256 en CBC ou GSM. Pour avoir une clé de 256bits, on fait un SHA256 du secret partagé (SHA256 output 256 bits non?)
 	*/
-	return nil
+	key := sha256.Sum256(dh)
+	c, err := aes.NewCipher(key[:])
+	if err != nil {
+		log.Printf("Error while initializing AES Encrypt : %v\n", err)
+	}
+	gcm, err := cipher.NewGCM(c)
+	if err != nil {
+		log.Printf("Error while initializing GCM Mode Enc: %v\n", err)
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
+		log.Printf("Error while initializing GCM Nonce Enc: %v\n", err)
+	}
+	return gcm.Seal(nonce, nonce, data, addata) //attention, dans l exemple que g pris addata = nil. A voir ce qu'on peut mettre ici pour l authentification gcm
 }
 
-func AESDecrypt() []byte {
-	return nil
+func AESDecrypt(dh []byte, data []byte, addata []byte) []byte {
+	key := sha256.Sum256(dh)
+	c, err := aes.NewCipher(key[:])
+	if err != nil {
+		log.Printf("Error while initializing AES Decrypt : %v\n", err)
+	}
+	gcm, err := cipher.NewGCM(c)
+	if err != nil {
+		log.Printf("Error while initializing GCM Mode Dec: %v\n", err)
+	}
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		log.Printf("Error on ciphertext length in AES Decrypt : doesn t match GCM Nonce size")
+	}
+	nonce, data := data[:nonceSize], data[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, data, addata)
+	if err != nil {
+		log.Printf("Error while decrypting : %v\n", err)
+	}
+	return plaintext
 }
 
 //==================================================================================================
