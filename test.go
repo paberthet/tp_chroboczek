@@ -14,6 +14,7 @@ import (
 	"io"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"time"
@@ -300,10 +301,28 @@ func TreeChecker() bool {
 //====================================================================================================
 
 func PubKeyToByte(pub ecdsa.PublicKey) []byte {
-	return nil
+	x := pub.X.Bytes()
+	x = x[:32]
+	y := pub.Y.Bytes()
+	y = y[:32]
+	ret := append(x, y...)
+	return ret
+	//ici on considère que la courbe est le standard P256
 }
 
-func ECDHGen(I []byte, T []byte) Message {
+func ByteToPubKey(b []byte) ecdsa.PublicKey {
+	var pub ecdsa.PublicKey
+	pub.Curve = elliptic.P256()
+	x := new(big.Int)
+	y := new(big.Int)
+	x.SetBytes(b[:32])
+	pub.X = x
+	y.SetBytes(b[32:])
+	pub.Y = y
+	return pub
+}
+
+func ECDHGen(I []byte, T []byte) (Message, ecdsa.PrivateKey) {
 	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		log.Printf("Error initializing private key ECDH")
@@ -312,12 +331,18 @@ func ECDHGen(I []byte, T []byte) Message {
 	B := PubKeyToByte(public)
 	L := make([]byte, 2)
 	binary.BigEndian.PutUint16(L[0:], uint16(len(B)))
-	return NewMessage(I, T, L, B)
+	return NewMessage(I, T, L, B), *private
+}
+
+func ECDHSharedGen(mess Message, privat ecdsa.PrivateKey) []byte {
+	pub := ByteToPubKey(mess.Body)
+	shared, _ := pub.Curve.ScalarMult(pub.X, pub.Y, privat.D.Bytes())
+	return shared.Bytes()
 }
 
 func AESEncrypt(dh []byte, data []byte, addata []byte) []byte {
 	/*
-		AES-256 en CBC ou GSM. Pour avoir une clé de 256bits, on fait un SHA256 du secret partagé (SHA256 output 256 bits non?)
+		AES-256 en CBC ou GCM. Pour avoir une clé de 256bits, on fait un SHA256 du secret partagé (SHA256 output 256 bits non?)
 	*/
 	key := sha256.Sum256(dh)
 	c, err := aes.NewCipher(key[:])
@@ -362,13 +387,21 @@ func main() {
 	var peertable [][]byte
 
 	/*Partie dédiée à des tests temporaires========================================================
-	 */
 	text := []byte("Un petit texte tout mignon tout plein à chiffrer qui je l espère fait plus de 256 bits")
 	key := []byte("YOLO")
 	cipher := AESEncrypt(key, text, []byte("randomtext"))
 	fmt.Printf("%v\n", bytes.Equal(text, AESDecrypt(key, cipher, []byte("radomtext"))))  //false
 	fmt.Printf("%v\n", bytes.Equal(text, AESDecrypt(key, cipher, []byte("randomtext")))) //true
-	log.Fatalf("End of temporary tests")
+	I := make([]byte, 4)
+	T := make([]byte, 1)
+	T[0] = byte(13)
+	mess := ECDHGen(I, T)
+	fmt.Printf("%v\n %v\n", mess.Body[:32], mess.Body[32:])
+	pub := ByteToPubKey(mess.Body)
+	fmt.Printf("x =%v\n y=%v\n curve =%v\n", pub.X, pub.Y, pub.Curve)
+	byt := PubKeyToByte(pub)
+	fmt.Printf("%v\n %v\n", byt[:32], byt[32:])
+	log.Fatalf("End of temporary tests")*/
 	/*
 		==========================================================================================*/
 
