@@ -350,6 +350,16 @@ func AESDecrypt(dh []byte, data []byte, addata []byte) []byte {
 func main() {
 	var peertable [][]byte
 
+	/*Partie dédiée à des tests temporaires========================================================
+	 */
+	text := []byte("Un petit texte tout mignon tout plein à chiffrer qui je l espère fait plus de 256 bits")
+	key := []byte("YOLO")
+	cipher := AESEncrypt(key, text, nil)
+	fmt.Printf("%v", bytes.Equal(text, AESDecrypt(key, cipher, nil)))
+	log.Fatalf("End of temporary tests")
+	/*
+		==========================================================================================*/
+
 	//Préparation des requettes REST
 	transport := &*http.DefaultTransport.(*http.Transport)
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
