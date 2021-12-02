@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -297,11 +299,20 @@ func TreeChecker() bool {
 //								Sécurité
 //====================================================================================================
 
-func DHKeyExchange() []byte {
-	/*
-		ici on génère g^a , on l'envoie via un message avec un type (qu il faudra réserver sur la mailing list), et on attend le reply qui contient g^b. Le return contient le secret partagé
-	*/
+func PubKeyToByte(pub ecdsa.PublicKey) []byte {
 	return nil
+}
+
+func ECDHGen(I []byte, T []byte) Message {
+	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		log.Printf("Error initializing private key ECDH")
+	}
+	public := private.PublicKey
+	B := PubKeyToByte(public)
+	L := make([]byte, 2)
+	binary.BigEndian.PutUint16(L[0:], uint16(len(B)))
+	return NewMessage(I, T, L, B)
 }
 
 func AESEncrypt(dh []byte, data []byte, addata []byte) []byte {
