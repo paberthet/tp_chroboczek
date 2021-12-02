@@ -355,8 +355,8 @@ func main() {
 	text := []byte("Un petit texte tout mignon tout plein à chiffrer qui je l espère fait plus de 256 bits")
 	key := []byte("YOLO")
 	cipher := AESEncrypt(key, text, []byte("randomtext"))
-	fmt.Printf("%v", bytes.Equal(text, AESDecrypt(key, cipher, []byte("radomtext"))))  //false
-	fmt.Printf("%v", bytes.Equal(text, AESDecrypt(key, cipher, []byte("randomtext")))) //true
+	fmt.Printf("%v\n", bytes.Equal(text, AESDecrypt(key, cipher, []byte("radomtext"))))  //false
+	fmt.Printf("%v\n", bytes.Equal(text, AESDecrypt(key, cipher, []byte("randomtext")))) //true
 	log.Fatalf("End of temporary tests")
 	/*
 		==========================================================================================*/
