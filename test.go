@@ -515,4 +515,104 @@ func main() {
 	NATTravMessage(peertable, conn)
 
 	wg.Wait()
+
+	//######################################################################################################################################################################
+
+	//Test d'accès aux données de jch
+	//Récup des adresses de jch
+	body,err = HttpRequest("GET", jchAddr, * client)
+	if err != nil {
+		log.Fatalf("Error get adresses : %v\n", err)
+		return
+	}
+	addressesTable := ParseREST(body)
+	//affichage des adresses
+	log.Printf("\n\nadresses : %v\n\n", string(addressesTable[0])) //Une en IPv4
+	//log.Printf("\n\nadresses : %v\n\n", string(addressesTable[1])) //Une en IPv6
+
+	//On va tester l'IPv4
+
+	connP2P := UDPInit(string(addressesTable[0]))
+	defer connP2P.Close()
+
+	MessageSender(connP2P, helloMess) //Il faut d'abord dire bonjour, sinon pas content
+	response = MessageListener(connP2P) //Helloreply
+	if !TypeChecker(response, 128) {
+		//ErrorMessageSender(response, "Bad type\n", conn)
+	}
+	//pubKey
+	response = MessageListener(connP2P)
+	if !TypeChecker(response, 1) {
+		//ErrorMessageSender(response, "Bad type\n", conn)
+	}
+	fmt.Printf("Pubkey jch : %v\n",response.Body) //Jch n'utilise pas de pubkey
+	//Pubkeyreply
+	response.Type[0] = byte(129)
+	MessageSender(connP2P, response)
+
+	//Root / rootreply  Apparement, il faut le faire aussi entre pairs .. c'est bizarre vu qu'on l'a déjà fait avec le serveur mais bon
+	response = MessageListener(connP2P)
+	if !TypeChecker(response, 2) {
+		//ErrorMessageSender(response, "Bad type\n", conn)
+	}
+	response.Body = hashEmptyRoot
+	response.Type[0] = byte(130)
+	MessageSender(connP2P, response)
+
+
+	Type[0] = 3 //getDatum
+	binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
+
+	giveMeData := NewMessage(Id, Type, Length, hash)
+	//fmt.Printf("%v \n", giveMeData)
+	MessageSender(connP2P, giveMeData)
+	response = MessageListener(connP2P)
+	if !TypeChecker(response, 131) { //La première fois je me suis pris un : 254 --> please hello first, je suis pas poly j'ai pas dit boujour
+		log.Printf("No datum..\n")
+	}
+
+	data_type := response.Body[32]
+	if(data_type == 0){
+		fmt.Printf("\nC'est un chunk\n")	
+	} else if data_type == 1{
+		fmt.Printf("\nC'est un bigfile\n")
+	} else {
+		fmt.Printf("\nC'est un directory\n")
+	}
+
+
+	nb_node := (binary.BigEndian.Uint16(response.Length)-33)/64 //le - 33 est du au fait que la réponse contient le hash que l'on a demandé, suivi d'un 2 (est-ici que le type de node est codé?)
+	fmt.Printf("Body node number : \n%v\n",nb_node) //Jch ne signe pas, alors c'est quoi ces octets à la fin???
+	
+	fmt.Printf("Body rep get datum : \n%v\n",response.Body)
+
+	//Il faut parser la réponse
+	for i := 0 ; uint16(i) < nb_node ; i++ {
+		fmt.Printf("élément %v : %v\n", i, string(response.Body[33 + 64*i:33 + 64*i + 32]))
+	}
+	//Imaginons qu'on veuille README, c'est le 1 donc on prend le premier hash --> bizarre il a un coeff 2 comme si c'était un directory
+	giveMeData.Body = response.Body[33 + 32*1 : 33 + 32*(1+1)] //Le 1 dans 33+32*1 et de 33+32*(1+2) correspond au 1 du premier élément de la liste
+	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
+	MessageSender(connP2P, giveMeData)
+	response = MessageListener(connP2P)
+	if !TypeChecker(response, 131) {
+		log.Printf("No datum..\n")
+	}
+	
+	fmt.Printf("Body rep get datum : \n%v\n",response.Body)
+	data_type = response.Body[32]
+	if(data_type == 0){
+		fmt.Printf("\nC'est un chunk\n")	
+	} else if data_type == 1{
+		fmt.Printf("\nC'est un bigfile\n")
+	} else {
+		fmt.Printf("\nC'est un directory\n")
+	}
+
+	fmt.Printf("Body rep get datum : \n%v\n",response.Body)
+	fmt.Printf("Et le README est :\n%v\n", string(response.Body[33:]))
+
+
+
+//##########################################################################################################################################################################
 }
