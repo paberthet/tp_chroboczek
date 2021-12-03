@@ -17,6 +17,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -382,10 +383,36 @@ func AESDecrypt(dh []byte, data []byte, addata []byte) []byte {
 	return plaintext
 }
 
+//===================================================================================================
+//                                SUBROUTINES
+//===================================================================================================
+
+func HelloRepeater(conn *net.UDPConn) {
+	ext := make([]byte, 4)
+	name := "panic"
+	hello := append(ext, []byte(name)...)
+
+	Type := make([]byte, 1)
+	Type[0] = 0
+	Length := make([]byte, 2)
+	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
+
+	helloMess := NewMessage(Id, Type, Length, hello)
+	for {
+		MessageSender(conn, helloMess)
+		response := MessageListener(conn)
+
+		if !TypeChecker(response, 128) {
+			ErrorMessageSender(response, "Bad type\n", conn)
+		}
+		time.Sleep(30 * time.Second)
+	}
+}
+
 //==================================================================================================
 func main() {
 	var peertable [][]byte
-
+	var wg sync.WaitGroup
 	/*Partie dédiée à des tests temporaires========================================================
 	text := []byte("Un petit texte tout mignon tout plein à chiffrer qui je l espère fait plus de 256 bits")
 	key := []byte("YOLO")
@@ -482,6 +509,10 @@ func main() {
 	response.Type[0] = byte(130)
 	MessageSender(conn, response)
 
+	wg.Add(1)
+	go HelloRepeater(conn)
+	defer wg.Done()
 	NATTravMessage(peertable, conn)
 
+	wg.Wait()
 }
