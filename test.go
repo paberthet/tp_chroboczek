@@ -215,6 +215,7 @@ func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
 	return checker
 }
 
+//Fonctionne sur un file, test en cours sur un BigFile
 func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en fait un deep first search
 	if !TypeChecker(mess, 131) { //Il faut que ce soit un message Datum
 		//ErrorMessageSender(response, "Bad type\n", conn)
