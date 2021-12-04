@@ -18,6 +18,7 @@ import (
 	"math/big"
 	"net"
 	"net/http"
+	"os"
 	"sync"
 	"time"
 )
@@ -333,20 +334,30 @@ type Node struct {
 func NewNode(cont []byte, chu bool, dir bool, roo *Node) (Node, error) {
 	var err error
 	err = nil
-	if len(cont) > 32 && chu {
+	if len(cont) > 128 && !dir {
 		err = errors.New("content is more than 1024 bits")
-	}
-	if len(cont) > 32*32 && !chu && !dir {
-		err = errors.New("too many branchs in this node")
 	}
 	checks := sha256.Sum256(cont)
 	nod := Node{cont, checks[:], chu, dir, roo}
 	return nod, err
 }
 
-func FileParser() {
-	//return
+func FileParser(filepath string) [][]byte {
 	//subdivise un fichier en chunks de 1024 bits recursivement
+	var tamp []byte
+	buf, err := os.ReadFile(filepath)
+	if err != nil {
+		log.Panic(err)
+	}
+	ret := make([][]byte, 0, len(buf)/128+1)
+	for len(buf) >= 128 {
+		tamp, buf = buf[:128], buf[128:]
+		ret = append(ret, tamp)
+	}
+	if len(buf) > 0 {
+		ret = append(ret, buf)
+	}
+	return ret
 }
 
 //il nous faut une ou des fonctions pour construire l arbre
@@ -683,7 +694,7 @@ func main() {
 	}
 	/*
 	//Imaginons qu'on veuille README, c'est le 1 donc on prend le premier hash --> bizarre il a un coeff 2 comme si c'était un directory
-	giveMeData.Body = response.Body[33+ 64*1 - 32 : 33+64*1] //Le 1 dans 33+64*1 - 32 et de 33 + 64*1 correspond au 1 du premier élément de la liste
+	giveMeData.Body = response.Body[33+64*1-32 : 33+64*1] //Le 1 dans 33+64*1 - 32 et de 33 + 64*1 correspond au 1 du premier élément de la liste
 	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
 	MessageSender(connP2P, giveMeData)
 	response = MessageListener(connP2P)
