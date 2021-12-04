@@ -32,6 +32,7 @@ type Message struct {
 var serveurUrl = "jch.irif.fr:8082"
 var jchPeersAddr = "https://jch.irif.fr:8082/peers/"
 var jchRootAddr = "https://jch.irif.fr:8082/peers/jch.irif.fr/root"
+var jchAddr = "https://jch.irif.fr:8082/peers/jch.irif.fr/addresses"
 
 var Id = []byte{byte(0x4), byte(0x8), byte(0xf), byte(0x10)}
 
@@ -493,6 +494,7 @@ func main() {
 
 	//affichage de root
 	log.Printf("\n\nroot : %v\n\n", body)
+	hash := body
 
 	hashEmptyRoot := make([]byte, 32)
 	//var hashEmptyRootStr string = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
