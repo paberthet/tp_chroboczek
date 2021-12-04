@@ -682,7 +682,7 @@ func main() {
 		fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
 	}
 	//Imaginons qu'on veuille README, c'est le 1 donc on prend le premier hash --> bizarre il a un coeff 2 comme si c'était un directory
-	giveMeData.Body = response.Body[33+32*1 : 33+32*(1+1)] //Le 1 dans 33+32*1 et de 33+32*(1+2) correspond au 1 du premier élément de la liste
+	giveMeData.Body = response.Body[33+ 64*1 - 32 : 33+64*1] //Le 1 dans 33+64*1 - 32 et de 33 + 64*1 correspond au 1 du premier élément de la liste
 	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
 	MessageSender(connP2P, giveMeData)
 	response = MessageListener(connP2P)
