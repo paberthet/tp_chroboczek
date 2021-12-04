@@ -216,6 +216,14 @@ func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
 	return checker
 }
 
+func checkHash(mess Message) int {
+	check := sha256.Sum256(mess.Body[32:])
+	if bytes.Equal(check, mess.Body[:32]){
+		return 0
+	}
+	return 1
+}
+
 //Fonctionne sur un file, test en cours sur un BigFile
 func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en fait un deep first search
 	if !TypeChecker(mess, 131) { //Il faut que ce soit un message Datum
@@ -239,13 +247,12 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 
 			MessageSender(conn, giveMeData)
 			response := MessageListener(conn)
-			
-			//on checke le hash
-			check := sha256.Sum256(response.Body[32:])
-			if bytes.Equal(check, response.Body[:32]){
-				log.Printf("Bad hash\n")
+			if !checkHash(response){
+				log.printf("Bad hash")
 				return
-			}
+			} 
+			//on checke le hash
+			
 			collectDataFile(response, conn, out)
 		}
 		return
