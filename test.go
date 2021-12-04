@@ -239,6 +239,13 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 
 			MessageSender(conn, giveMeData)
 			response := MessageListener(conn)
+			
+			//on checke le hash
+			check := sha256.Sum256(response.Body[32:])
+			if bytes.Equal(check, response.Body[:32]){
+				log.Printf("Bad hash\n")
+				return
+			}
 			collectDataFile(response, conn, out)
 		}
 		return
