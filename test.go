@@ -220,31 +220,30 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 		//ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	dataType := mess.Body[32] //c'est à cet endroit qu'est codé le type de data, après les 32 premiers octet du hash de notre requette
-	if dataType == 2 { //On est dans un directory
+	if dataType == 2 {        //On est dans un directory
 		log.Printf("You are not in a File or BigFile\n")
 		return
 	}
 	if dataType == 1 { //On est dans un BigFile
-		nbNodes :=  (binary.BigEndian.Uint16(mess.Length)-33)/32 //le - 33 est du au fait que la réponse contient le hash que l'on a demandé, ensuite dans un chunk, il n'y a que des hash, pas de noms d'où la division par 32 et non 64
-		for i := 0 ; i < int(nbNodes) ; i ++ {
+		nbNodes := (binary.BigEndian.Uint16(mess.Length) - 33) / 32 //le - 33 est du au fait que la réponse contient le hash que l'on a demandé, ensuite dans un chunk, il n'y a que des hash, pas de noms d'où la division par 32 et non 64
+		for i := 0; i < int(nbNodes); i++ {
 			//Faire getdatum
-			Type := make([]byte,1)
+			Type := make([]byte, 1)
 			Type[0] = 3 //getDatum
-			Length := make([]byte,2)
+			Length := make([]byte, 2)
 			binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
 
-			giveMeData := NewMessage(Id, Type, Length, mess.Body[33 + 32*i: 33 + 32*(i+1)])
+			giveMeData := NewMessage(Id, Type, Length, mess.Body[33+32*i:33+32*(i+1)])
 
 			MessageSender(conn, giveMeData)
-			response = MessageListener(connP2P)
+			response := MessageListener(conn)
 			collectDataFile(response, conn, out)
 		}
 		return
 	} else { //dataType = 0 on est donc dans un chunk
-		append(*out, mess.Body[33::])
+		append(*out, mess.Body[33:]...)
 		return
 	}
-
 
 }
 
@@ -476,7 +475,7 @@ func HelloRepeater(conn *net.UDPConn) {
 	}
 }
 
-func dataReceiver(){
+func dataReceiver() {
 	//Récup des pairs REST
 
 	//Affichage pairs
@@ -492,10 +491,10 @@ func dataReceiver(){
 	//Recup root pair REST (On ne le fait que si on a établi la co UDP, sinon cela ne nous servira à rien)
 
 	//On est dans un directory, et tant qu'on est dans un directory
-		//Où voulez vous aller? Scanf
-		//UDP givedata
-		//Affichage
-	
+	//Où voulez vous aller? Scanf
+	//UDP givedata
+	//Affichage
+
 	//On a atteint un file ou un big file
 	//recup de la donnee
 
@@ -613,7 +612,7 @@ func main() {
 
 	//Test d'accès aux données de jch
 	//Récup des adresses de jch
-	body,err = HttpRequest("GET", jchAddr, * client)
+	body, err = HttpRequest("GET", jchAddr, *client)
 	if err != nil {
 		log.Fatalf("Error get adresses : %v\n", err)
 		return
@@ -628,7 +627,7 @@ func main() {
 	connP2P := UDPInit(string(addressesTable[0]))
 	defer connP2P.Close()
 
-	MessageSender(connP2P, helloMess) //Il faut d'abord dire bonjour, sinon pas content
+	MessageSender(connP2P, helloMess)   //Il faut d'abord dire bonjour, sinon pas content
 	response = MessageListener(connP2P) //Helloreply
 	if !TypeChecker(response, 128) {
 		//ErrorMessageSender(response, "Bad type\n", conn)
@@ -638,7 +637,7 @@ func main() {
 	if !TypeChecker(response, 1) {
 		//ErrorMessageSender(response, "Bad type\n", conn)
 	}
-	fmt.Printf("Pubkey jch : %v\n",response.Body) //Jch n'utilise pas de pubkey
+	fmt.Printf("Pubkey jch : %v\n", response.Body) //Jch n'utilise pas de pubkey
 	//Pubkeyreply
 	response.Type[0] = byte(129)
 	MessageSender(connP2P, response)
@@ -652,8 +651,7 @@ func main() {
 	response.Type[0] = byte(130)
 	MessageSender(connP2P, response)
 
-
-	Type[0] = 3 //getDatum
+	Type[0] = 3                                        //getDatum
 	binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
 
 	giveMeData := NewMessage(Id, Type, Length, hash)
@@ -665,47 +663,44 @@ func main() {
 	}
 
 	data_type := response.Body[32]
-	if(data_type == 0){
-		fmt.Printf("\nC'est un chunk\n")	
-	} else if data_type == 1{
+	if data_type == 0 {
+		fmt.Printf("\nC'est un chunk\n")
+	} else if data_type == 1 {
 		fmt.Printf("\nC'est un bigfile\n")
 	} else {
 		fmt.Printf("\nC'est un directory\n")
 	}
 
+	nb_node := (binary.BigEndian.Uint16(response.Length) - 33) / 64 //le - 33 est du au fait que la réponse contient le hash que l'on a demandé, suivi d'un 2 (est-ici que le type de node est codé?)
+	fmt.Printf("Body node number : \n%v\n", nb_node)                //Jch ne signe pas, alors c'est quoi ces octets à la fin???
 
-	nb_node := (binary.BigEndian.Uint16(response.Length)-33)/64 //le - 33 est du au fait que la réponse contient le hash que l'on a demandé, suivi d'un 2 (est-ici que le type de node est codé?)
-	fmt.Printf("Body node number : \n%v\n",nb_node) //Jch ne signe pas, alors c'est quoi ces octets à la fin???
-	
-	fmt.Printf("Body rep get datum : \n%v\n",response.Body)
+	fmt.Printf("Body rep get datum : \n%v\n", response.Body)
 
 	//Il faut parser la réponse
-	for i := 0 ; uint16(i) < nb_node ; i++ {
-		fmt.Printf("élément %v : %v\n", i, string(response.Body[33 + 64*i:33 + 64*i + 32]))
+	for i := 0; uint16(i) < nb_node; i++ {
+		fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
 	}
 	//Imaginons qu'on veuille README, c'est le 1 donc on prend le premier hash --> bizarre il a un coeff 2 comme si c'était un directory
-	giveMeData.Body = response.Body[33 + 32*1 : 33 + 32*(1+1)] //Le 1 dans 33+32*1 et de 33+32*(1+2) correspond au 1 du premier élément de la liste
+	giveMeData.Body = response.Body[33+32*1 : 33+32*(1+1)] //Le 1 dans 33+32*1 et de 33+32*(1+2) correspond au 1 du premier élément de la liste
 	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
 	MessageSender(connP2P, giveMeData)
 	response = MessageListener(connP2P)
 	if !TypeChecker(response, 131) {
 		log.Printf("No datum..\n")
 	}
-	
-	fmt.Printf("Body rep get datum : \n%v\n",response.Body)
+
+	fmt.Printf("Body rep get datum : \n%v\n", response.Body)
 	data_type = response.Body[32]
-	if(data_type == 0){
-		fmt.Printf("\nC'est un chunk\n")	
-	} else if data_type == 1{
+	if data_type == 0 {
+		fmt.Printf("\nC'est un chunk\n")
+	} else if data_type == 1 {
 		fmt.Printf("\nC'est un bigfile\n")
 	} else {
 		fmt.Printf("\nC'est un directory\n")
 	}
 
-	fmt.Printf("Body rep get datum : \n%v\n",response.Body)
+	fmt.Printf("Body rep get datum : \n%v\n", response.Body)
 	fmt.Printf("Et le README est :\n%v\n", string(response.Body[33:]))
 
-
-
-//##########################################################################################################################################################################
+	//##########################################################################################################################################################################
 }
