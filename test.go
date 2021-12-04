@@ -241,7 +241,7 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 		}
 		return
 	} else { //dataType = 0 on est donc dans un chunk
-		append(*out, mess.Body[33:]...)
+		*out = append(*out, mess.Body[33:]...)
 		return
 	}
 
