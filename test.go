@@ -215,6 +215,39 @@ func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
 	return checker
 }
 
+func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en fait un deep first search
+	if !TypeChecker(mess, 131) { //Il faut que ce soit un message Datum
+		//ErrorMessageSender(response, "Bad type\n", conn)
+	}
+	dataType := mess.Body[32] //c'est à cet endroit qu'est codé le type de data, après les 32 premiers octet du hash de notre requette
+	if dataType == 2 { //On est dans un directory
+		log.Printf("You are not in a File or BigFile\n")
+		return
+	}
+	if dataType == 1 { //On est dans un BigFile
+		nbNodes :=  (binary.BigEndian.Uint16(mess.Length)-33)/32 //le - 33 est du au fait que la réponse contient le hash que l'on a demandé, ensuite dans un chunk, il n'y a que des hash, pas de noms d'où la division par 32 et non 64
+		for i := 0 ; i < int(nbNodes) ; i ++ {
+			//Faire getdatum
+			Type := make([]byte,1)
+			Type[0] = 3 //getDatum
+			Length := make([]byte,2)
+			binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
+
+			giveMeData := NewMessage(Id, Type, Length, mess.Body[33 + 32*i: 33 + 32*(i+1)])
+
+			MessageSender(conn, giveMeData)
+			response = MessageListener(connP2P)
+			collectDataFile(response, conn, out)
+		}
+		return
+	} else { //dataType = 0 on est donc dans un chunk
+		append(*out, mess.Body[33::])
+		return
+	}
+
+
+}
+
 //=====================================================================================
 //						API REST
 //=====================================================================================
@@ -441,6 +474,31 @@ func HelloRepeater(conn *net.UDPConn) {
 		}
 		time.Sleep(30 * time.Second)
 	}
+}
+
+func dataReceiver(){
+	//Récup des pairs REST
+
+	//Affichage pairs
+
+	//Choix du pair scanf
+
+	//Récup adresses pair REST
+
+	//Tentative de co à l'une des adresses du pair (UDP)
+
+	//Si co continue, sinon on revient au début avec message impossible to connect
+
+	//Recup root pair REST (On ne le fait que si on a établi la co UDP, sinon cela ne nous servira à rien)
+
+	//On est dans un directory, et tant qu'on est dans un directory
+		//Où voulez vous aller? Scanf
+		//UDP givedata
+		//Affichage
+	
+	//On a atteint un file ou un big file
+	//recup de la donnee
+
 }
 
 //==================================================================================================
