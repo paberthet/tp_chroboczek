@@ -681,6 +681,7 @@ func main() {
 	for i := 0; uint16(i) < nb_node; i++ {
 		fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
 	}
+	/*
 	//Imaginons qu'on veuille README, c'est le 1 donc on prend le premier hash --> bizarre il a un coeff 2 comme si c'était un directory
 	giveMeData.Body = response.Body[33+ 64*1 - 32 : 33+64*1] //Le 1 dans 33+64*1 - 32 et de 33 + 64*1 correspond au 1 du premier élément de la liste
 	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
@@ -702,6 +703,51 @@ func main() {
 
 	fmt.Printf("Body rep get datum : \n%v\n", response.Body)
 	fmt.Printf("Et le README est :\n%v\n", string(response.Body[33:]))
+	*/
+	//Imaginons que l'on veuille aller dans images
+	giveMeData.Body = response.Body[33 + 64*3 - 32 : 33 + 64*3] //Le 1 dans 33+32*1 et de 33+32*(1+2) correspond au 1 du premier élément de la liste
+	
+
+	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
+	MessageSender(connP2P, giveMeData)
+	response = MessageListener(connP2P)
+	nb_node = (binary.BigEndian.Uint16(response.Length)-33)/64
+	for i := 0 ; uint16(i) < nb_node ; i++ {
+		fmt.Printf("élément %v : %v\n", i, string(response.Body[33 + 64*i:33 + 64*i + 32]))
+	}
+	//fmt.Printf("Body rep get datum : \n%v\n",string(response.Body))
+
+	//est ce qu'on ne voudrait pas jch.jpeg? si si
+	fileName := string(response.Body[33 + 64*3 -64: 33 + 64*3 - 32])
+	fmt.Printf("File name : \n%v\n",fileName)
+	giveMeData.Body = response.Body[33 + 64*3 - 32 : 33 + 64*3] //jch.jpeg est aussi en 3 eme position
+	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
+	MessageSender(connP2P, giveMeData)
+	response = MessageListener(connP2P)
+	TypeChecker(response,131)
+    fmt.Printf("Body rep get datum : \n%v\n",response.Body)
+
+    out := make([]byte, 0)
+	collectDataFile(response, connP2P, &out)
+
+	fmt.Printf("test recup bigFile : \n%v\n",out)
+
+	f, errr := os.OpenFile("abc.jpeg", os.O_CREATE|os.O_RDWR, 0755) //Pk elle veut pas un string en paramètre elle...
+    if errr != nil {
+    	fmt.Printf("Err open\n")
+        log.Fatal(err)
+    }
+
+    _, err = f.Write(out)
+    if err != nil {
+    	fmt.Printf("Err write\n")
+        log.Fatal(err)
+    }
+
+    f.Close()
+
+//##########################################################################################################################################################################
+}
 
 	//##########################################################################################################################################################################
 }
