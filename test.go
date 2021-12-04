@@ -19,6 +19,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strings"
 	"sync"
 	"time"
 )
@@ -216,12 +217,9 @@ func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
 	return checker
 }
 
-func checkHash(mess Message) int {
+func checkHash(mess Message) bool {
 	check := sha256.Sum256(mess.Body[32:])
-	if bytes.Equal(check, mess.Body[:32]){
-		return 0
-	}
-	return 1
+	return bytes.Equal(check[:], mess.Body[:32])
 }
 
 //Fonctionne sur un file, test en cours sur un BigFile
@@ -247,12 +245,12 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 
 			MessageSender(conn, giveMeData)
 			response := MessageListener(conn)
-			if !checkHash(response){
-				log.printf("Bad hash")
+			if !checkHash(response) {
+				log.Printf("Bad hash")
 				return
-			} 
+			}
 			//on checke le hash
-			
+
 			collectDataFile(response, conn, out)
 		}
 		return
@@ -342,17 +340,23 @@ type Node struct {
 	chunk     bool
 	directory bool
 	root      *Node
-	//son []Node
+	son       []Node
 }
 
-func NewNode(cont []byte, chu bool, dir bool, roo *Node) (Node, error) {
+func NewNode(cont []byte, checksum []byte, chu bool, dir bool, roo *Node, tab []Node) (Node, error) {
 	var err error
 	err = nil
 	if len(cont) > 128 && !dir {
 		err = errors.New("content is more than 1024 bits")
 	}
+	if len(tab) > 32 && !dir {
+		err = errors.New("parent of too many nodes")
+	}
 	checks := sha256.Sum256(cont)
-	nod := Node{cont, checks[:], chu, dir, roo}
+	if !bytes.Equal(checks[:], checksum) {
+		err = errors.New("invalid hash")
+	}
+	nod := Node{cont, checksum, chu, dir, roo, tab}
 	return nod, err
 }
 
@@ -378,7 +382,8 @@ func FileParser(filepath string) [][]byte {
 //eventuellement aussi de nouveaux struct
 
 func BytesToChunk(byt []byte) Node {
-	nod, err := NewNode(byt, true, false, nil)
+	check := sha256.Sum256(byt)
+	nod, err := NewNode(byt, check[:], true, false, nil, nil)
 	if err != nil {
 		log.Printf("Error while building leafs : %v", err)
 	}
@@ -707,74 +712,72 @@ func main() {
 		fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
 	}
 	/*
-	//Imaginons qu'on veuille README, c'est le 1 donc on prend le premier hash --> bizarre il a un coeff 2 comme si c'était un directory
-	giveMeData.Body = response.Body[33+64*1-32 : 33+64*1] //Le 1 dans 33+64*1 - 32 et de 33 + 64*1 correspond au 1 du premier élément de la liste
-	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
-	MessageSender(connP2P, giveMeData)
-	response = MessageListener(connP2P)
-	if !TypeChecker(response, 131) {
-		log.Printf("No datum..\n")
-	}
+		//Imaginons qu'on veuille README, c'est le 1 donc on prend le premier hash --> bizarre il a un coeff 2 comme si c'était un directory
+		giveMeData.Body = response.Body[33+64*1-32 : 33+64*1] //Le 1 dans 33+64*1 - 32 et de 33 + 64*1 correspond au 1 du premier élément de la liste
+		fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
+		MessageSender(connP2P, giveMeData)
+		response = MessageListener(connP2P)
+		if !TypeChecker(response, 131) {
+			log.Printf("No datum..\n")
+		}
 
-	fmt.Printf("Body rep get datum : \n%v\n", response.Body)
-	data_type = response.Body[32]
-	if data_type == 0 {
-		fmt.Printf("\nC'est un chunk\n")
-	} else if data_type == 1 {
-		fmt.Printf("\nC'est un bigfile\n")
-	} else {
-		fmt.Printf("\nC'est un directory\n")
-	}
+		fmt.Printf("Body rep get datum : \n%v\n", response.Body)
+		data_type = response.Body[32]
+		if data_type == 0 {
+			fmt.Printf("\nC'est un chunk\n")
+		} else if data_type == 1 {
+			fmt.Printf("\nC'est un bigfile\n")
+		} else {
+			fmt.Printf("\nC'est un directory\n")
+		}
 
-	fmt.Printf("Body rep get datum : \n%v\n", response.Body)
-	fmt.Printf("Et le README est :\n%v\n", string(response.Body[33:]))
+		fmt.Printf("Body rep get datum : \n%v\n", response.Body)
+		fmt.Printf("Et le README est :\n%v\n", string(response.Body[33:]))
 	*/
 	//Imaginons que l'on veuille aller dans images
-	giveMeData.Body = response.Body[33 + 64*3 - 32 : 33 + 64*3] //Le 1 dans 33+32*1 et de 33+32*(1+2) correspond au 1 du premier élément de la liste
-	
+	giveMeData.Body = response.Body[33+64*3-32 : 33+64*3] //Le 1 dans 33+32*1 et de 33+32*(1+2) correspond au 1 du premier élément de la liste
 
 	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
 	MessageSender(connP2P, giveMeData)
 	response = MessageListener(connP2P)
-	nb_node = (binary.BigEndian.Uint16(response.Length)-33)/64
-	for i := 0 ; uint16(i) < nb_node ; i++ {
-		fmt.Printf("élément %v : %v\n", i, string(response.Body[33 + 64*i:33 + 64*i + 32]))
+	nb_node = (binary.BigEndian.Uint16(response.Length) - 33) / 64
+	for i := 0; uint16(i) < nb_node; i++ {
+		fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
 	}
 	//fmt.Printf("Body rep get datum : \n%v\n",string(response.Body))
 
 	//est ce qu'on ne voudrait pas jch.jpeg? si si
-	fileName := string(response.Body[33 + 64*3 -64: 33 + 64*3 - 32])
+	fileName := string(response.Body[33+64*3-64 : 33+64*3-32])
 	//fileName := "jch.jpeg"
 	//fmt.Printf("File name len: \n%d\n",len(fileName))
-	fileName = strings.Trim( fileName, string(0) )
+	fileName = strings.Trim(fileName, string(0))
 
-	giveMeData.Body = response.Body[33 + 64*3 - 32 : 33 + 64*3] //jch.jpeg est aussi en 3 eme position
+	giveMeData.Body = response.Body[33+64*3-32 : 33+64*3] //jch.jpeg est aussi en 3 eme position
 	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
 	MessageSender(connP2P, giveMeData)
 	response = MessageListener(connP2P)
-	TypeChecker(response,131)
-    fmt.Printf("Body rep get datum : \n%v\n",response.Body)
+	TypeChecker(response, 131)
+	fmt.Printf("Body rep get datum : \n%v\n", response.Body)
 
-    out := make([]byte, 0)
+	out := make([]byte, 0)
 	collectDataFile(response, connP2P, &out)
 
 	//fmt.Printf("test recup bigFile : \n%v\n",out)
 
 	f, errr := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0755) //Pk elle veut pas un string en paramètre elle...
-    if errr != nil {
-    	fmt.Printf("Err open\n")
-        log.Fatal(err)
-    }
+	if errr != nil {
+		fmt.Printf("Err open\n")
+		log.Fatal(err)
+	}
 
-    _, err = f.Write(out)
-    if err != nil {
-    	fmt.Printf("Err write\n")
-        log.Fatal(err)
-    }
+	_, err = f.Write(out)
+	if err != nil {
+		fmt.Printf("Err write\n")
+		log.Fatal(err)
+	}
 
-    f.Close()
-//##########################################################################################################################################################################
-}
-
+	f.Close()
 	//##########################################################################################################################################################################
 }
+
+//##########################################################################################################################################################################
