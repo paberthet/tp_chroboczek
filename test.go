@@ -730,7 +730,10 @@ func main() {
 
 	//est ce qu'on ne voudrait pas jch.jpeg? si si
 	fileName := string(response.Body[33 + 64*3 -64: 33 + 64*3 - 32])
-	fmt.Printf("File name : \n%v\n",fileName)
+	//fileName := "jch.jpeg"
+	//fmt.Printf("File name len: \n%d\n",len(fileName))
+	fileName = strings.Trim( fileName, string(0) )
+
 	giveMeData.Body = response.Body[33 + 64*3 - 32 : 33 + 64*3] //jch.jpeg est aussi en 3 eme position
 	fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
 	MessageSender(connP2P, giveMeData)
@@ -741,9 +744,9 @@ func main() {
     out := make([]byte, 0)
 	collectDataFile(response, connP2P, &out)
 
-	fmt.Printf("test recup bigFile : \n%v\n",out)
+	//fmt.Printf("test recup bigFile : \n%v\n",out)
 
-	f, errr := os.OpenFile("abc.jpeg", os.O_CREATE|os.O_RDWR, 0755) //Pk elle veut pas un string en paramètre elle...
+	f, errr := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0755) //Pk elle veut pas un string en paramètre elle...
     if errr != nil {
     	fmt.Printf("Err open\n")
         log.Fatal(err)
@@ -756,7 +759,6 @@ func main() {
     }
 
     f.Close()
-
 //##########################################################################################################################################################################
 }
 
