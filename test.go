@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -286,12 +287,44 @@ func PeerSelector(ids [][]byte, client http.Client) [][]byte {
 //									Merkle s tree
 //===================================================================================================
 
+type Node struct {
+	content   []byte
+	checksum  []byte
+	chunk     bool
+	directory bool
+	root      *Node
+	//son []Node
+}
+
+func NewNode(cont []byte, chu bool, dir bool, roo *Node) (Node, error) {
+	var err error
+	err = nil
+	if len(cont) > 32 && chu {
+		err = errors.New("content is more than 1024 bits")
+	}
+	if len(cont) > 32*32 && !chu && !dir {
+		err = errors.New("too many branchs in this node")
+	}
+	checks := sha256.Sum256(cont)
+	nod := Node{cont, checks[:], chu, dir, roo}
+	return nod, err
+}
+
 func FileParser() {
-	return //subdivise un fichier en chunks de 1024 bits recursivement
+	//return
+	//subdivise un fichier en chunks de 1024 bits recursivement
 }
 
 //il nous faut une ou des fonctions pour construire l arbre
 //eventuellement aussi de nouveaux struct
+
+func BytesToChunk(byt []byte) Node {
+	nod, err := NewNode(byt, true, false, nil)
+	if err != nil {
+		log.Printf("Error while building leafs : %v", err)
+	}
+	return nod
+}
 
 func TreeChecker() bool {
 	return false
@@ -433,7 +466,7 @@ func main() {
 		==========================================================================================*/
 
 	//Préparation des requettes REST
-	transport := &*http.DefaultTransport.(*http.Transport)
+	transport := http.DefaultTransport.(*http.Transport)
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	client := &http.Client{
 		Transport: transport,
