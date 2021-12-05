@@ -315,19 +315,24 @@ func ParseREST(body []byte) [][]byte {
 	return ids
 }
 
-func PeerSelector(ids [][]byte, client http.Client) [][]byte {
+func PeerSelector(ids [][]byte, client http.Client) ([][]byte, string) {
 	for i, id := range ids {
 		fmt.Printf("%v %v: %v\n", i, "peers", string(id))
 	}
-	//scanf
-	j := 0
-	addr := jchPeersAddr + string(ids[j]) + "/addresses"
+	fmt.Printf("\n\nQuel pair voulez vous contacter?\nEntrez le numéro du pair\n")
+	var j int
+	fmt.Scanf("%d", &j)
+	peerAddr := jchPeersAddr + string(ids[j])
+	addr := peerAddr + "/addresses"
+
+	fmt.Printf("Vous allez contacter %v\n", string(ids[j]))
+
 	reponse, err := HttpRequest("GET", addr, client)
 	if err != nil {
 		log.Fatalf("Error get peers addresses: %v\n", err)
 	}
 	reponse2 := ParseREST(reponse)
-	return reponse2
+	return reponse2, peerAddr
 }
 
 //===================================================================================================
@@ -506,29 +511,166 @@ func HelloRepeater(conn *net.UDPConn) {
 	}
 }
 
-func dataReceiver() {
-	//Récup des pairs REST
+func dataReceiver(client http.Client) {
+	//Tout ce qui suit sera fait en boucle
+	for {
 
-	//Affichage pairs
+		//Récup des pairs REST
+		body, err := HttpRequest("GET", jchPeersAddr, client)
+		if err != nil {
+			log.Printf("Error get peers : %v\n", err)
+			continue
+		} else {
+			//Affichage pairs et choix du pair scanf et récupération des adresses ip du pair sélectionné
+			fmt.Printf("\n\n\n\n\n\n\n\n")
+			peertable := ParseREST(body)
 
-	//Choix du pair scanf
+			peertableAddr, peerURL := PeerSelector(peertable, client)
 
-	//Récup adresses pair REST
+			//#######################################################################################################################################
+			//création du hellomessage
+			hashEmptyRoot := make([]byte, 32)
 
-	//Tentative de co à l'une des adresses du pair (UDP)
+			//c'est sale de le faire à la main mais c'est pour le test
+			binary.BigEndian.PutUint64(hashEmptyRoot[0:8], uint64(0xe3b0c44298fc1c14))
+			binary.BigEndian.PutUint64(hashEmptyRoot[8:16], uint64(0x9afbf4c8996fb924))
+			binary.BigEndian.PutUint64(hashEmptyRoot[16:24], uint64(0x27ae41e4649b934c))
+			binary.BigEndian.PutUint64(hashEmptyRoot[24:32], uint64(0xa495991b7852b856))
 
-	//Si co continue, sinon on revient au début avec message impossible to connect
+			ext := make([]byte, 4)
+			name := "panic"
+			hello := append(ext, []byte(name)...)
 
-	//Recup root pair REST (On ne le fait que si on a établi la co UDP, sinon cela ne nous servira à rien)
+			Type := make([]byte, 1)
+			Type[0] = 0
+			Length := make([]byte, 2)
+			binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
 
-	//On est dans un directory, et tant qu'on est dans un directory
-	//Où voulez vous aller? Scanf
-	//UDP givedata
-	//Affichage
+			helloMess := NewMessage(Id, Type, Length, hello)
 
-	//On a atteint un file ou un big file
-	//recup de la donnee
+			//#######################################################################################################################################
+			//Est-ce qu'on ne mettrait pas notre hash dans une variable globale pour qu'on puisse y accéder quand on veut? (en lecture seule dans cette routine)
 
+			//Tentative de co à l'une des adresses du pair (UDP)
+			var connP2P *net.UDPConn
+			var connected bool = false
+			for _, addr := range peertableAddr {
+				connP2P = UDPInit(string(addr))
+
+				MessageSender(connP2P, helloMess)    //Il faut d'abord dire bonjour, sinon pas content
+				response := MessageListener(connP2P) //Helloreply
+				if !TypeChecker(response, 128) {
+					log.Printf("Tentative de connexion échouée, au stade Hello\n")
+					connP2P.Close()
+
+				} else {
+					//pubKey
+					response = MessageListener(connP2P)
+					if !TypeChecker(response, 1) {
+						log.Printf("Tentative de connexion échouée, au stade pubkey\n")
+						connP2P.Close()
+					} else {
+						fmt.Printf("Pubkey : %v\n", response.Body) //Jch n'utilise pas de pubkey
+						//Pubkeyreply
+						response.Type[0] = byte(129)
+						MessageSender(connP2P, response)
+
+						//Root / rootreply  Apparement, il faut le faire aussi entre pairs .. c'est bizarre vu qu'on l'a déjà fait avec le serveur mais bon
+						response = MessageListener(connP2P)
+						if !TypeChecker(response, 2) {
+							log.Printf("Tentative de connexion échouée, au stade root\n")
+							connP2P.Close()
+						} else {
+							response.Body = hashEmptyRoot
+							response.Type[0] = byte(130)
+							MessageSender(connP2P, response)
+							connected = true
+							break //Si on a réussi toutes ces étapes on peut arrếter d'essayer toutes les adresses
+						}
+					}
+				}
+			}
+			defer connP2P.Close()
+			if connected { //On ne réalise la suite que si l'on a réussi à se connecter
+				//récupération root du pair
+				rootURL := peerURL + "/root"
+				body, err = HttpRequest("GET", rootURL, client)
+				if err != nil {
+					log.Fatalf("Error get root : %v\n", err)
+					continue
+				}
+
+				//affichage de root
+				//log.Printf("\n\nroot : %v\n\n", body)
+				hash := body //hash contient le hash de root pour l'instant
+				fileName := "root"
+
+				nodeType := byte(2) //directory
+
+				//Préparation des messages get datum
+				Type[0] = 3                                        //getDatum
+				binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
+				giveMeData := NewMessage(Id, Type, Length, hash)
+				var response Message
+
+				for nodeType == 2 { //Tant que l'on est dans un répertoire, on affiche son contenu à l'utilisateur
+					fmt.Printf("\n\nVous êtes dans %v\n\n", fileName)
+					MessageSender(connP2P, giveMeData)  //On envoie la requette
+					response = MessageListener(connP2P) //On recoit la réponse
+
+					if !TypeChecker(response, 131) { //Vérification que c'est bien un datum
+						log.Printf("No datum..\n")
+						return
+					}
+					if !checkHash(response) {
+						log.Printf("Bad hash in response")
+						return
+					}
+					nodeType = response.Body[32]
+					if nodeType == 2 {
+						nb_node := (binary.BigEndian.Uint16(response.Length) - 33) / 64
+						for i := 0; uint16(i) < nb_node; i++ {
+							fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
+						}
+						fmt.Printf("\nOù voullez vous aller ?\n")
+						var k int = int(nb_node) + 1
+						fmt.Scanf("%d", &k)
+						for k >= int(nb_node) {
+							fmt.Printf("Entrez un nombre entre 0 et %d\n", nb_node-1)
+							fmt.Scanf("%d", &k)
+						}
+						giveMeData.Body = response.Body[33+64*(k+1)-32 : 33+64*(k+1)] //On met à jour le hash de la donnée que l'on veut récupérer
+						//fmt.Printf("response body :\n%v\n", response.Body)
+						//fmt.Printf("giveMeData body :\n%v\n", giveMeData.Body)
+						//On va garder en mémoire le nom du fichier/dossier vers lequel on se dirige, de cette manière on pourra nommer le fichier correctment dans notre machine
+						fileName = string(response.Body[33+64*(k+1)-64 : 33+64*(k+1)-32])
+						fileName = strings.Trim(fileName, string(0))
+					}
+				}
+				//Sortie de la boucle, donc nous somme dans un BigFile ou un file
+				out := make([]byte, 0)
+				collectDataFile(response, connP2P, &out)
+
+				//Création du fichier dans lequel on va écrire les données
+				f, errr := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0755) //Création du fichier dans lequel on va écrire les données
+				if errr != nil {
+					fmt.Printf("Err open\n")
+					log.Fatal(err)
+				}
+				//écriture dans le fichier
+				_, err = f.Write(out)
+				if err != nil {
+					fmt.Printf("Err write\n")
+					log.Fatal(err)
+				}
+
+				f.Close()
+
+			} else {
+				log.Printf("Toutes les adresses ont été testées, impossible de se connecter\n")
+			}
+		}
+	}
 }
 
 //==================================================================================================
@@ -571,7 +713,8 @@ func main() {
 	//affichage des pairs
 	peertable = ParseREST(body)
 
-	peertable = PeerSelector(peertable, *client)
+	//On ne se sert pas de cette ligne, on le fait à la main dans le test en dessous
+	//peertable = PeerSelector(peertable, *client)
 
 	//Récupération de root de jch
 	body, err = HttpRequest("GET", jchRootAddr, *client)
