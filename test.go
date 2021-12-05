@@ -172,7 +172,10 @@ func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
 	*/
 
 	for !checker && (cmptr < len(peeraddr)) {
-		addr, _ := net.ResolveUDPAddr("udp", string(peeraddr[cmptr]))
+		addr, err := net.ResolveUDPAddr("udp", string(peeraddr[cmptr]))
+		if err != nil {
+			log.Fatalf("Error on ResolveUDPAddr:%v\n", err)
+		}
 		fmt.Printf("len : %v addr : %v addr bytes : %v\n", len(addr.IP), addr.IP, []byte(addr.IP))
 		test_port := make([]byte, 2)
 		binary.BigEndian.PutUint16(test_port[0:], uint16(addr.Port))
