@@ -446,12 +446,10 @@ func ECDHSharedGen(mess Message, privat ecdsa.PrivateKey) []byte {
 	return shared.Bytes()
 }
 
-func AESEncrypt(dh []byte, data []byte, addata []byte) []byte {
-	/*
-		AES-256 en CBC ou GCM. Pour avoir une clé de 256bits, on fait un SHA256 du secret partagé (SHA256 output 256 bits non?)
-	*/
+func AESEncrypt(dh []byte, data []byte) []byte {
 	key := sha256.Sum256(dh)
-	c, err := aes.NewCipher(key[:])
+	key128 := key[:16]
+	c, err := aes.NewCipher(key128)
 	if err != nil {
 		log.Printf("Error while initializing AES Encrypt : %v\n", err)
 	}
@@ -463,12 +461,13 @@ func AESEncrypt(dh []byte, data []byte, addata []byte) []byte {
 	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
 		log.Printf("Error while initializing GCM Nonce Enc: %v\n", err)
 	}
-	return gcm.Seal(nonce, nonce, data, addata) //attention, dans l exemple que g pris addata = nil. A voir ce qu'on peut mettre ici pour l authentification gcm
+	return gcm.Seal(nonce, nonce, data, key[16:])
 }
 
-func AESDecrypt(dh []byte, data []byte, addata []byte) []byte {
+func AESDecrypt(dh []byte, data []byte) []byte {
 	key := sha256.Sum256(dh)
-	c, err := aes.NewCipher(key[:])
+	key128 := key[:16]
+	c, err := aes.NewCipher(key128)
 	if err != nil {
 		log.Printf("Error while initializing AES Decrypt : %v\n", err)
 	}
@@ -481,7 +480,7 @@ func AESDecrypt(dh []byte, data []byte, addata []byte) []byte {
 		log.Printf("Error on ciphertext length in AES Decrypt : doesn t match GCM Nonce size")
 	}
 	nonce, data := data[:nonceSize], data[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, data, addata)
+	plaintext, err := gcm.Open(nil, nonce, data, key[16:])
 	if err != nil {
 		log.Printf("Error while decrypting : %v\n", err)
 	}
@@ -683,19 +682,18 @@ func main() {
 	/*Partie dédiée à des tests temporaires========================================================
 	text := []byte("Un petit texte tout mignon tout plein à chiffrer qui je l espère fait plus de 256 bits")
 	key := []byte("YOLO")
-	cipher := AESEncrypt(key, text, []byte("randomtext"))
-	fmt.Printf("%v\n", bytes.Equal(text, AESDecrypt(key, cipher, []byte("radomtext"))))  //false
-	fmt.Printf("%v\n", bytes.Equal(text, AESDecrypt(key, cipher, []byte("randomtext")))) //true
+	cipher := AESEncrypt(key, text)
+	fmt.Printf("%v\n", bytes.Equal(text, AESDecrypt(key, cipher)))
 	I := make([]byte, 4)
 	T := make([]byte, 1)
 	T[0] = byte(13)
-	mess := ECDHGen(I, T)
+	mess, _ := ECDHGen(I, T)
 	fmt.Printf("%v\n %v\n", mess.Body[:32], mess.Body[32:])
 	pub := ByteToPubKey(mess.Body)
 	fmt.Printf("x =%v\n y=%v\n curve =%v\n", pub.X, pub.Y, pub.Curve)
 	byt := PubKeyToByte(pub)
 	fmt.Printf("%v\n %v\n", byt[:32], byt[32:])
-	log.Fatalf("End of temporary tests")*/
+	log.Fatalf("End of temporary tests")
 	/*
 		==========================================================================================*/
 
@@ -807,12 +805,12 @@ func main() {
 	MessageSender(connP2P, helloMess)   //Il faut d'abord dire bonjour, sinon pas content
 	response = MessageListener(connP2P) //Helloreply
 	if !TypeChecker(response, 128) {
-		//ErrorMessageSender(response, "Bad type\n", conn)
+		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	//pubKey
 	response = MessageListener(connP2P)
 	if !TypeChecker(response, 1) {
-		//ErrorMessageSender(response, "Bad type\n", conn)
+		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	fmt.Printf("Pubkey jch : %v\n", response.Body) //Jch n'utilise pas de pubkey
 	//Pubkeyreply
@@ -822,7 +820,7 @@ func main() {
 	//Root / rootreply  Apparement, il faut le faire aussi entre pairs .. c'est bizarre vu qu'on l'a déjà fait avec le serveur mais bon
 	response = MessageListener(connP2P)
 	if !TypeChecker(response, 2) {
-		//ErrorMessageSender(response, "Bad type\n", conn)
+		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	response.Body = hashEmptyRoot
 	response.Type[0] = byte(130)
