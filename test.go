@@ -220,7 +220,6 @@ func checkHash(mess Message) bool {
 	return bytes.Equal(check[:], mess.Body[:32])
 }
 
-//Fonctionne sur un file, test en cours sur un BigFile
 func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en fait un deep first search
 	if !TypeChecker(mess, 131) { //Il faut que ce soit un message Datum
 		//ErrorMessageSender(response, "Bad type\n", conn)
@@ -247,7 +246,6 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 				log.Printf("Bad hash")
 				return
 			}
-			//on checke le hash
 
 			collectDataFile(response, conn, out)
 		}
@@ -257,6 +255,55 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 		return
 	}
 
+}
+func collectDirectory(mess Message, conn *net.UDPConn, fileName string, filePath string) {
+	if mess.Body[32] != 2 {
+		//On est sur un File ou big file
+		out := make([]byte, 0)
+		collectDataFile(mess, conn, &out)
+
+		//Création du fichier dans lequel on va écrire les données
+		f, errr := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0755) //Création du fichier dans lequel on va écrire les données
+		if errr != nil {
+			fmt.Printf("Err open\n")
+			log.Fatal(errr)
+		}
+		//écriture dans le fichier
+		_, errr = f.Write(out)
+		if errr != nil {
+			fmt.Printf("Err write\n")
+			log.Fatal(errr)
+		}
+
+		f.Close()
+		return
+	} else {
+		//Création du répertoire avec le nom fileName
+		os.MkdirAll(filePath, 0755)
+
+		nb_nodes := (binary.BigEndian.Uint16(mess.Length) - 33) / 64
+		for i := 0; i < int(nb_nodes); i++ {
+			//Faire getdatum
+			Type := make([]byte, 1)
+			Type[0] = 3 //getDatum
+			Length := make([]byte, 2)
+			binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
+
+			giveMeData := NewMessage(Id, Type, Length, mess.Body[33+64*(i+1)-32:33+64*(i+1)]) //On met le bon hash dedans
+			new_fileName := string(mess.Body[33+64*i : 33+64*i+32])
+			new_fileName = strings.Trim(new_fileName, string(0))
+
+			new_filePath := filePath + "/" + new_fileName
+
+			MessageSender(conn, giveMeData)
+			response := MessageListener(conn)
+			if !checkHash(response) {
+				log.Printf("Bad hash")
+				return
+			}
+			collectDirectory(response, conn, new_fileName, new_filePath)
+		}
+	}
 }
 
 //=====================================================================================
@@ -520,6 +567,7 @@ func dataReceiver(client http.Client) {
 				//log.Printf("\n\nroot : %v\n\n", body)
 				hash := body //hash contient le hash de root pour l'instant
 				fileName := "root"
+				filePath := "/root"
 
 				nodeType := byte(2) //directory
 
@@ -528,9 +576,9 @@ func dataReceiver(client http.Client) {
 				binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
 				giveMeData := NewMessage(Id, Type, Length, hash)
 				var response Message
-
+				collected_directory := 0
 				for nodeType == 2 { //Tant que l'on est dans un répertoire, on affiche son contenu à l'utilisateur
-					fmt.Printf("\n\nVous êtes dans %v\n\n", fileName)
+					fmt.Printf("\n\nVous êtes dans %v\n\n", filePath)
 					MessageSender(connP2P, giveMeData)  //On envoie la requette
 					response = MessageListener(connP2P) //On recoit la réponse
 
@@ -548,40 +596,51 @@ func dataReceiver(client http.Client) {
 						for i := 0; uint16(i) < nb_node; i++ {
 							fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
 						}
-						fmt.Printf("\nOù voullez vous aller ?\n")
+						fmt.Printf("\nPour descendre dans l'arborescence, entrez le numéro correspondant (entre %d et %d)\n", 0, nb_node-1)
+						fmt.Printf("Pour télécharger le dossier complet, entrez %d\n", nb_node)
 						var k int = int(nb_node) + 1
 						fmt.Scanf("%d", &k)
-						for k >= int(nb_node) {
-							fmt.Printf("Entrez un nombre entre 0 et %d\n", nb_node-1)
+						for k > int(nb_node) {
+							fmt.Printf("Entrez un nombre entre 0 et %d\n", nb_node)
 							fmt.Scanf("%d", &k)
 						}
-						giveMeData.Body = response.Body[33+64*(k+1)-32 : 33+64*(k+1)] //On met à jour le hash de la donnée que l'on veut récupérer
-						//fmt.Printf("response body :\n%v\n", response.Body)
-						//fmt.Printf("giveMeData body :\n%v\n", giveMeData.Body)
-						//On va garder en mémoire le nom du fichier/dossier vers lequel on se dirige, de cette manière on pourra nommer le fichier correctment dans notre machine
-						fileName = string(response.Body[33+64*(k+1)-64 : 33+64*(k+1)-32])
-						fileName = strings.Trim(fileName, string(0))
+						if k != int(nb_node) {
+							giveMeData.Body = response.Body[33+64*(k+1)-32 : 33+64*(k+1)] //On met à jour le hash de la donnée que l'on veut récupérer
+							//fmt.Printf("response body :\n%v\n", response.Body)
+							//fmt.Printf("giveMeData body :\n%v\n", giveMeData.Body)
+							//On va garder en mémoire le nom du fichier/dossier vers lequel on se dirige, de cette manière on pourra nommer le fichier correctment dans notre machine
+							fileName = string(response.Body[33+64*(k+1)-64 : 33+64*(k+1)-32])
+							fileName = strings.Trim(fileName, string(0))
+							filePath = filePath + "/" + fileName
+						} else {
+							//On télécharge tout le dossier
+							collectDirectory(response, connP2P, fileName, "./"+fileName)
+							collected_directory = 1
+							break //Et on arre la descente dans l'arborescence
+						}
+
 					}
 				}
-				//Sortie de la boucle, donc nous somme dans un BigFile ou un file
-				out := make([]byte, 0)
-				collectDataFile(response, connP2P, &out)
+				if collected_directory != 1 {
+					//Sortie de la boucle, donc si nous n'avon spas télécharger un dossier complet, nous somme dans un BigFile ou un file
+					out := make([]byte, 0)
+					collectDataFile(response, connP2P, &out)
 
-				//Création du fichier dans lequel on va écrire les données
-				f, errr := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0755) //Création du fichier dans lequel on va écrire les données
-				if errr != nil {
-					fmt.Printf("Err open\n")
-					log.Fatal(err)
+					//Création du fichier dans lequel on va écrire les données
+					f, errr := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0755) //Création du fichier dans lequel on va écrire les données
+					if errr != nil {
+						fmt.Printf("Err open\n")
+						log.Fatal(err)
+					}
+					//écriture dans le fichier
+					_, err = f.Write(out)
+					if err != nil {
+						fmt.Printf("Err write\n")
+						log.Fatal(err)
+					}
+
+					f.Close()
 				}
-				//écriture dans le fichier
-				_, err = f.Write(out)
-				if err != nil {
-					fmt.Printf("Err write\n")
-					log.Fatal(err)
-				}
-
-				f.Close()
-
 			} else {
 				log.Printf("Toutes les adresses ont été testées, impossible de se connecter\n")
 			}
