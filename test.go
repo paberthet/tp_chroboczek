@@ -2,26 +2,21 @@ package main
 
 import (
 	"bytes"
-	"crypto/aes"
-	"crypto/cipher"
-	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"io"
 	"io/ioutil"
 	"log"
-	"math/big"
 	"net"
 	"net/http"
 	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/paberthet/tp_chroboczek/projetcrypto"
 )
 
 type Message struct {
@@ -406,87 +401,6 @@ func TreeChecker() bool {
 //								Sécurité
 //====================================================================================================
 
-func PubKeyToByte(pub ecdsa.PublicKey) []byte {
-	x := pub.X.Bytes()
-	x = x[:32]
-	y := pub.Y.Bytes()
-	y = y[:32]
-	ret := append(x, y...)
-	return ret
-	//ici on considère que la courbe est le standard P256
-}
-
-func ByteToPubKey(b []byte) ecdsa.PublicKey {
-	var pub ecdsa.PublicKey
-	pub.Curve = elliptic.P256()
-	x := new(big.Int)
-	y := new(big.Int)
-	x.SetBytes(b[:32])
-	pub.X = x
-	y.SetBytes(b[32:])
-	pub.Y = y
-	return pub
-}
-
-func ECDHGen(I []byte, T []byte) (Message, ecdsa.PrivateKey) {
-	private, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		log.Printf("Error initializing private key ECDH")
-	}
-	public := private.PublicKey
-	B := PubKeyToByte(public)
-	L := make([]byte, 2)
-	binary.BigEndian.PutUint16(L[0:], uint16(len(B)))
-	return NewMessage(I, T, L, B), *private
-}
-
-func ECDHSharedGen(mess Message, privat ecdsa.PrivateKey) []byte {
-	pub := ByteToPubKey(mess.Body)
-	shared, _ := pub.Curve.ScalarMult(pub.X, pub.Y, privat.D.Bytes())
-	return shared.Bytes()
-}
-
-func AESEncrypt(dh []byte, data []byte) []byte {
-	key := sha256.Sum256(dh)
-	key128 := key[:16]
-	c, err := aes.NewCipher(key128)
-	if err != nil {
-		log.Printf("Error while initializing AES Encrypt : %v\n", err)
-	}
-	gcm, err := cipher.NewGCM(c)
-	if err != nil {
-		log.Printf("Error while initializing GCM Mode Enc: %v\n", err)
-	}
-	nonce := make([]byte, gcm.NonceSize())
-	if _, err = io.ReadFull(rand.Reader, nonce); err != nil {
-		log.Printf("Error while initializing GCM Nonce Enc: %v\n", err)
-	}
-	return gcm.Seal(nonce, nonce, data, key[16:])
-}
-
-func AESDecrypt(dh []byte, data []byte) []byte {
-	key := sha256.Sum256(dh)
-	key128 := key[:16]
-	c, err := aes.NewCipher(key128)
-	if err != nil {
-		log.Printf("Error while initializing AES Decrypt : %v\n", err)
-	}
-	gcm, err := cipher.NewGCM(c)
-	if err != nil {
-		log.Printf("Error while initializing GCM Mode Dec: %v\n", err)
-	}
-	nonceSize := gcm.NonceSize()
-	if len(data) < nonceSize {
-		log.Printf("Error on ciphertext length in AES Decrypt : doesn t match GCM Nonce size")
-	}
-	nonce, data := data[:nonceSize], data[nonceSize:]
-	plaintext, err := gcm.Open(nil, nonce, data, key[16:])
-	if err != nil {
-		log.Printf("Error while decrypting : %v\n", err)
-	}
-	return plaintext
-}
-
 //===================================================================================================
 //                                SUBROUTINES
 //===================================================================================================
@@ -679,20 +593,14 @@ func dataReceiver(client http.Client) {
 func main() {
 	var peertable [][]byte
 	var wg sync.WaitGroup
-	/*Partie dédiée à des tests temporaires========================================================
+	/*Partie dédiée à des tests temporaires========================================================*/
 	text := []byte("Un petit texte tout mignon tout plein à chiffrer qui je l espère fait plus de 256 bits")
+	text2 := []byte("yuppy")
 	key := []byte("YOLO")
-	cipher := AESEncrypt(key, text)
-	fmt.Printf("%v\n", bytes.Equal(text, AESDecrypt(key, cipher)))
-	I := make([]byte, 4)
-	T := make([]byte, 1)
-	T[0] = byte(13)
-	mess, _ := ECDHGen(I, T)
-	fmt.Printf("%v\n %v\n", mess.Body[:32], mess.Body[32:])
-	pub := ByteToPubKey(mess.Body)
-	fmt.Printf("x =%v\n y=%v\n curve =%v\n", pub.X, pub.Y, pub.Curve)
-	byt := PubKeyToByte(pub)
-	fmt.Printf("%v\n %v\n", byt[:32], byt[32:])
+	cipher := projetcrypto.AESEncrypt(key, text)
+	cipher2 := projetcrypto.AESEncrypt(key, text2)
+	fmt.Printf("%v\n", bytes.Equal(text, projetcrypto.AESDecrypt(key, cipher)))
+	fmt.Printf("%v\n", bytes.Equal(text2, projetcrypto.AESDecrypt(key, cipher2)))
 	log.Fatalf("End of temporary tests")
 	/*
 		==========================================================================================*/
