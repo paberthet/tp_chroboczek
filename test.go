@@ -110,6 +110,9 @@ func TypeChecker(mess Message, typ int16) bool {
 	typB[0] = byte(typ)
 	if !bytes.Equal(mess.Type, typB) {
 		log.Printf("Unvalid type : expected %v, got %v\n", typB, mess.Type)
+		if mess.Type[0] == 254 {
+			log.Printf("%v\n", string(mess.Body))
+		}
 		return false
 	}
 	return true
@@ -130,10 +133,35 @@ func MessageListener(conn *net.UDPConn) Message {
 	if err != nil {
 		log.Fatalf("Timeout Set error %d\n", err)
 	}
-	_, _, err = conn.ReadFromUDP(messB)
-	if err != nil {
-		log.Fatalf("Read error %d", err)
+	//attente exponentielle d'une réponse
+	for i < 5 {
+		_, err = conn.Read(messB)
+		if err != nil {
+			err = conn.SetReadDeadline(time.Now().Add(time.Duration(delay) * 200 * time.Millisecond))
+			if err != nil {
+				log.Fatalf("Timeout Set error %d\n", err)
+			}
+			delay *= 2
+			i++
+		} else {
+			//fmt.Printf("\n\n%v\n\n", messB)
+			break
+		}
+		if delay == 56 {
+			conn.Close()
+			messB[4] = 254
+			rep := []byte("Pas de réponse")
+			binary.BigEndian.PutUint16(messB[5:7], uint16(len(rep)))
+			errMess := NewMessage(messB[:4], messB[4:5], messB[5:7], []byte("Pas de réponse"))
+			return errMess
+		}
 	}
+	/*
+		_, _, err = conn.ReadFromUDP(messB)
+		if err != nil {
+			log.Fatalf("Read error %d", err)
+		}
+	*/
 	//on va tronquer messB car on risque des pbs de diff entre la longueur de messB (1024) et la longueur réelle du message
 	upper := 7 + binary.BigEndian.Uint16(messB[5:7])
 	mess := NewMessage(messB[:4], messB[4:5], messB[5:7], messB[7:upper])
