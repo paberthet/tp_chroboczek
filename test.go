@@ -139,36 +139,49 @@ func MessageSender(conn *net.UDPConn, mess Message) {
 	}
 }
 
-func MessageListener(conn *net.UDPConn) Message {
+func MessageListener(conn *net.UDPConn, sended Message, repeat bool) Message {
 	messB := make([]byte, 1024)
 	err := conn.SetReadDeadline(time.Now().Add(2000 * time.Millisecond))
 	if err != nil {
 		log.Fatalf("Timeout Set error %d\n", err)
 	}
 	var i int = 0
-	var delay int = 2
+	var j int = 0
+
 	//attente exponentielle d'une réponse
-	for i < 5 {
-		_, err = conn.Read(messB)
-		if err != nil {
-			err = conn.SetReadDeadline(time.Now().Add(time.Duration(delay) * 200 * time.Millisecond))
-			if err != nil {
-				log.Fatalf("Timeout Set error %d\n", err)
+	var errRead error
+	for j < 5 {
+		var delay int = 2
+		for i < 5 {
+			_, errRead = conn.Read(messB)
+			if errRead != nil {
+				err = conn.SetReadDeadline(time.Now().Add(time.Duration(delay) * 200 * time.Millisecond))
+				if err != nil {
+					log.Fatalf("Timeout Set error %d\n", err)
+				}
+				delay *= 2
+				i++
+			} else {
+				//fmt.Printf("\n\n%v\n\n", messB)
+				break
 			}
-			delay *= 2
-			i++
-		} else {
-			//fmt.Printf("\n\n%v\n\n", messB)
+		}
+		if repeat == false { //si on decide de ne pas répéter la requette on s'arrête là
 			break
 		}
-		if delay == 56 {
-			conn.Close()
-			messB[4] = 254
-			rep := []byte("Pas de réponse")
-			binary.BigEndian.PutUint16(messB[5:7], uint16(len(rep)))
-			errMess := NewMessage(messB[:4], messB[4:5], messB[5:7], []byte("Pas de réponse"))
-			return errMess
+		if i==5 {
+			MessageSender(conn, sended)
+		} else {
+			break
 		}
+		j++
+	}
+	if errRead != nil { //Si on à la fin on a toujours pas réussi à écouter un message
+		messB[4] = byte(254)
+		rep := []byte("Pas de réponse")
+		binary.BigEndian.PutUint16(messB[5:7], uint16(len(rep)))
+		errMess := NewMessage(messB[:4], messB[4:5], messB[5:7], rep)
+		return errMess
 	}
 
 	//on va tronquer messB car on risque des pbs de diff entre la longueur de messB (1024) et la longueur réelle du message
