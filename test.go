@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/binary"
@@ -43,6 +44,16 @@ Par contre il faudrait retirer les log.Fatalf de MessageListner et lui faire ret
 sinon à la première écoute sans réponse ça va crasher,
 Ou alors ne pas définir de Deadline sur l'écoute ?
 */
+
+func newID() []byte {
+	new_id := make([]byte, 4)
+	_, err := rand.Read(new_id)
+	if err != nil {
+		fmt.Println("error new Id:", err)
+		return Id
+	}
+	return new_id
+}
 
 //================================================================================
 //						UDP Message
@@ -103,6 +114,7 @@ func ErrorMessageSender(mess Message, str string, conn *net.UDPConn) { // génè
 	mess.Body = tmp
 	binary.BigEndian.PutUint16(mess.Length[0:], uint16(len(tmp)))
 	MessageSender(conn, mess)
+	Id = newID() //Actualisation de Id
 }
 
 func TypeChecker(mess Message, typ int16) bool {
@@ -133,6 +145,8 @@ func MessageListener(conn *net.UDPConn) Message {
 	if err != nil {
 		log.Fatalf("Timeout Set error %d\n", err)
 	}
+	var i int = 0
+	var delay int = 2
 	//attente exponentielle d'une réponse
 	for i < 5 {
 		_, err = conn.Read(messB)
@@ -156,91 +170,90 @@ func MessageListener(conn *net.UDPConn) Message {
 			return errMess
 		}
 	}
-	/*
-		_, _, err = conn.ReadFromUDP(messB)
-		if err != nil {
-			log.Fatalf("Read error %d", err)
-		}
-	*/
+
 	//on va tronquer messB car on risque des pbs de diff entre la longueur de messB (1024) et la longueur réelle du message
 	upper := 7 + binary.BigEndian.Uint16(messB[5:7])
 	mess := NewMessage(messB[:4], messB[4:5], messB[5:7], messB[7:upper])
 	return mess
 }
 
-func NATTravMessage(peeraddr [][]byte, conn *net.UDPConn) bool {
+func NATTravMessage(peeraddr [][]byte, connJCH *net.UDPConn) *net.UDPConn {
+	//Préparation du message à envoyer au serveur
 	T := make([]byte, 1)
+	I := make([]byte, 4)
 	T[0] = byte(133)
 	L := make([]byte, 2)
 	binary.BigEndian.PutUint16(L[0:], uint16(18))
 	B := make([]byte, 18)
-	mess := NewMessage(Id, T, L, B)
+	mess := NewMessage(I, T, L, B)
+	//Fin de préparation du message à envoyer au serveur
+
+	//préparation en amont du message Hello,
+	ext := make([]byte, 4)
+	name := "panic"
+	hello := append(ext, []byte(name)...)
+
+	Type := make([]byte, 1)
+	Type[0] = 0
+	Length := make([]byte, 2)
+	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
+
+	helloMess := NewMessage(Id, Type, Length, hello)
+	//Fin préparation du Hello
+
 	checker := false
 	cmptr := 0
 
-	/*
-
-		//préparation en amont du message Hello,
-		ext := make([]byte, 4)
-		name := "panic"
-		hello := append(ext, []byte(name)...)
-
-		Type := make([]byte, 1)
-		Type[0] = 0
-		Length := make([]byte, 2)
-		binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
-
-		helloMess := NewMessage(Id, Type, Length, hello)
-		//Fin préparation du Hello
-	*/
-
 	for !checker && (cmptr < len(peeraddr)) {
-		addr, err := net.ResolveUDPAddr("udp", string(peeraddr[cmptr]))
-		if err != nil {
-			log.Fatalf("Error on ResolveUDPAddr:%v\n", err)
-		}
+		addr, _ := net.ResolveUDPAddr("udp", string(peeraddr[cmptr]))
 		fmt.Printf("len : %v addr : %v addr bytes : %v\n", len(addr.IP), addr.IP, []byte(addr.IP))
 		test_port := make([]byte, 2)
 		binary.BigEndian.PutUint16(test_port[0:], uint16(addr.Port))
 		fmt.Printf("port : %v port bytes %v\n", addr.Port, test_port)
 
-		//Ok c'est bon, en fait la conversion en ipv4 mapped se fait toute seule par UDP resolve
-		port := make([]byte, 2)
-		binary.BigEndian.PutUint16(port[0:], uint16(addr.Port))
-		ip := append([]byte(addr.IP), port...)
+		ip := append([]byte(addr.IP), test_port...)
 		mess.Body = ip
 
 		fmt.Printf("Message construit : %v\n\n", mess)
 
-		/*
+		//Envoie de la requette de traversée de NAT au serveur
+		MessageSender(connJCH, mess) //Envoyé à jch obiligatoirement
 
-			//Envoie de la requette de traversée de NAT au serveur
-			MessageSender(conn, mess)
-			//Attente que la demande soit transmise au client par le serveur
-			time.Sleep(1*time.Second)
-			//Envoi d'un Hello au client
-			connP2P, errD := net.DialUDP("udp", nil, addr) //On ne peut pas faire appel à UDPinit telle qu'elle est définie actuellement
-			if errD == nil {
-				defer connP2P.Close() //Bizarre de faire ça là en sachant qu'on ne pourra pas y faire appel en dehors, il faudrait peut être renvoyer l'adresse avec laquell eon a réussi à traverser le NAT plutôt qu'un bool
+		//Attente que la demande soit transmise au client par le serveur
+		time.Sleep(1 * time.Second)
+		//Envoi d'un Hello au client
+		//Initialisation de la connexion avec le client
+		connP2P, errD := net.DialUDP("udp", nil, addr)
+		if errD == nil {
 
-				//Envoi du Hello
-				MessageSender(connP2P, helloMess)
-				//Ecoute si Hello du client
-				rep := MessageListener(conn) //Pb ici, on voudrait pouvoir passer à la suite si on n'a pas de retour, mais ici à cause des log.Fatalf ça va crash si on n'a pas de retour
-				//si on a un retour
-					rep.Type[0]=128 //type de hello reply, on utilise rep car il y a deja le bon id dedans
-					MessageSender(connP2P, rep)
-					//on peut aussi écouter le helloReply qu'on est censés recevoir en retour de notre hello
-					rep = MessageListener(connP2P)
-					//à ce moment là le NAT est traversé, on peut dialoguer directement avec le client, je pense qu'il faudrait faire un return connP2P
+			//Envoi du Hello
+			MessageSender(connP2P, helloMess)
+			Id_tmp_client1 := helloMess.Id
+
+			//Ecoute si Hello du client
+			rep := MessageListener(connP2P)
+			//si on a un retour
+			if (rep.Type[0] == 0) && !(bytes.Equal(rep.Id[:4], make([]byte, 4))) { //Message hello et Id non nul
+				rep.Type[0] = 128           //type de hello reply, on utilise rep car il y a deja le bon id dedans
+				MessageSender(connP2P, rep) //On envoie un hello reply au hello qu'on vient de recevoir
+				//on peut aussi écouter le helloReply qu'on est censés recevoir en retour de notre hello
+				rep = MessageListener(connP2P)
+				//fmt.Printf("HelloReply mess normalement : %v\n", rep)
+				if !bytes.Equal(rep.Id[:4], Id_tmp_client1) {
+					fmt.Printf("Erreur : Helloreply avec le mauvais Id\n")
+				}
+
+				//à ce moment là le NAT est traversé, on peut dialoguer directement avec le client, je pense qu'il faudrait faire un return connP2P
+				return connP2P
 			}
+
 			//et sinon, si on n'a pas réussi les étapes précédentes, on passe à l'adresse suivante.
-
-		*/
-
+		} else {
+			connP2P.Close()
+		}
 		cmptr++
 	}
-	return checker
+	return nil
 }
 
 func checkHash(mess Message) bool {
@@ -269,6 +282,7 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 			giveMeData := NewMessage(Id, Type, Length, mess.Body[33+32*i:33+32*(i+1)])
 
 			MessageSender(conn, giveMeData)
+			Id = newID()
 			response := MessageListener(conn)
 			if !checkHash(response) {
 				log.Printf("Bad hash")
@@ -324,6 +338,7 @@ func collectDirectory(mess Message, conn *net.UDPConn, fileName string, filePath
 			new_filePath := filePath + "/" + new_fileName
 
 			MessageSender(conn, giveMeData)
+			Id = newID()
 			response := MessageListener(conn)
 			if !checkHash(response) {
 				log.Printf("Bad hash")
@@ -490,13 +505,17 @@ func HelloRepeater(conn *net.UDPConn) {
 	Length := make([]byte, 2)
 	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
 
-	helloMess := NewMessage(Id, Type, Length, hello)
 	for {
+		Id = newID()
+		helloMess := NewMessage(Id, Type, Length, hello)
 		MessageSender(conn, helloMess)
 		response := MessageListener(conn)
 
 		if !TypeChecker(response, 128) {
 			ErrorMessageSender(response, "Bad type\n", conn)
+		}
+		if !bytes.Equal(response.Id[:4], helloMess.Id[:4]) {
+			log.Printf("HelloReply avec mauvais ID\n")
 		}
 		time.Sleep(30 * time.Second)
 	}
@@ -519,14 +538,14 @@ func dataReceiver(client http.Client) {
 			peertableAddr, peerURL := PeerSelector(peertable, client)
 
 			//#######################################################################################################################################
-			//création du hellomessage
-			hashEmptyRoot := make([]byte, 32)
 
-			//c'est sale de le faire à la main mais c'est pour le test
+			hashEmptyRoot := make([]byte, 32)
 			binary.BigEndian.PutUint64(hashEmptyRoot[0:8], uint64(0xe3b0c44298fc1c14))
 			binary.BigEndian.PutUint64(hashEmptyRoot[8:16], uint64(0x9afbf4c8996fb924))
 			binary.BigEndian.PutUint64(hashEmptyRoot[16:24], uint64(0x27ae41e4649b934c))
 			binary.BigEndian.PutUint64(hashEmptyRoot[24:32], uint64(0xa495991b7852b856))
+
+			//création du hellomessage
 
 			ext := make([]byte, 4)
 			name := "panic"
@@ -537,20 +556,19 @@ func dataReceiver(client http.Client) {
 			Length := make([]byte, 2)
 			binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
 
-			helloMess := NewMessage(Id, Type, Length, hello)
-
-			//#######################################################################################################################################
-			//Est-ce qu'on ne mettrait pas notre hash dans une variable globale pour qu'on puisse y accéder quand on veut? (en lecture seule dans cette routine)
+			
 
 			//Tentative de co à l'une des adresses du pair (UDP)
 			var connP2P *net.UDPConn
 			var connected bool = false
 			for _, addr := range peertableAddr {
+				Id = newID()
+				helloMess := NewMessage(Id, Type, Length, hello)
 				connP2P = UDPInit(string(addr))
 
 				MessageSender(connP2P, helloMess)    //Il faut d'abord dire bonjour, sinon pas content
 				response := MessageListener(connP2P) //Helloreply
-				if !TypeChecker(response, 128) {
+				if !TypeChecker(response, 128) || !bytes.Equal(helloMess.Id[:4], response.Id[:4]) {
 					log.Printf("Tentative de connexion échouée, au stade Hello\n")
 					connP2P.Close()
 
@@ -561,12 +579,15 @@ func dataReceiver(client http.Client) {
 						log.Printf("Tentative de connexion échouée, au stade pubkey\n")
 						connP2P.Close()
 					} else {
-						fmt.Printf("Pubkey : %v\n", response.Body) //Jch n'utilise pas de pubkey
+						fmt.Printf("Pubkey : %v\n", response.Body)
 						//Pubkeyreply
+						pubKey, _ := projetcrypto.ECDHGen() //Il faudra stocker la clef privée si on signe les messages
+						response = NewMessage(response.Id,make([]byte,1), make([]byte, 2), pubKey )
 						response.Type[0] = byte(129)
+						binary.BigEndian.PutUint16(response.Length[:2],uint16(len(pubKey)))
 						MessageSender(connP2P, response)
 
-						//Root / rootreply  Apparement, il faut le faire aussi entre pairs .. c'est bizarre vu qu'on l'a déjà fait avec le serveur mais bon
+						//Root / rootreply , il faut le faire aussi entre pairs
 						response = MessageListener(connP2P)
 						if !TypeChecker(response, 2) {
 							log.Printf("Tentative de connexion échouée, au stade root\n")
@@ -607,6 +628,7 @@ func dataReceiver(client http.Client) {
 				collected_directory := 0
 				for nodeType == 2 { //Tant que l'on est dans un répertoire, on affiche son contenu à l'utilisateur
 					fmt.Printf("\n\nVous êtes dans %v\n\n", filePath)
+					giveMeData.Id = newID()
 					MessageSender(connP2P, giveMeData)  //On envoie la requette
 					response = MessageListener(connP2P) //On recoit la réponse
 
@@ -740,7 +762,7 @@ func main() {
 	Length := make([]byte, 2)
 	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
 
-	helloMess := NewMessage(Id, Type, Length, hello)
+	helloMess := NewMessage(newID(), Type, Length, hello)
 
 	conn := UDPInit(serveurUrl)
 	defer conn.Close()
@@ -751,6 +773,10 @@ func main() {
 	if !TypeChecker(response, 128) {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
+	if !bytes.Equal(helloMess.Id[:4], response.Id[:4]) {
+		ErrorMessageSender(response, "Bad Id\n", conn)
+	}
+
 
 	//Publickey + PublicKeyReply
 
@@ -759,6 +785,11 @@ func main() {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	response.Type[0] = byte(129)
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+Insérer une pubkey
+//////////////////////////////////////////////////////////////////////////////////////////////
+
 	MessageSender(conn, response)
 
 	//root + rootReply
@@ -774,9 +805,12 @@ func main() {
 	wg.Add(1)
 	go HelloRepeater(conn)
 	defer wg.Done()
-	NATTravMessage(peertable, conn)
+	//NATTravMessage(peertable, conn)
 
 	wg.Wait()
+
+//à paritr de là, tout ce qui est en dessous peut être remplacer par un go dataReceiver()
+
 
 	//######################################################################################################################################################################
 
