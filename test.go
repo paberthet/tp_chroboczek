@@ -337,8 +337,10 @@ func collectDirectory(mess Message, conn *net.UDPConn, fileName string, filePath
 		return
 	} else {
 		//Création du répertoire avec le nom fileName
-		os.MkdirAll(filePath, 0755)
-
+		err := os.MkdirAll(filePath, 0755)
+		if err != nil {
+			log.Printf("Erreur création de dossier")
+		}
 		nb_nodes := (binary.BigEndian.Uint16(mess.Length) - 33) / 64
 		for i := 0; i < int(nb_nodes); i++ {
 			//Faire getdatum
@@ -419,7 +421,7 @@ func ParseREST(body []byte) [][]byte {
 	return ids
 }
 
-func PeerSelector(ids [][]byte, client http.Client) ([][]byte, string) {
+func PeerSelector(ids [][]byte, client http.Client) ([][]byte, string, string) {
 	for i, id := range ids {
 		fmt.Printf("%v %v: %v\n", i, "peers", string(id))
 	}
@@ -436,7 +438,7 @@ func PeerSelector(ids [][]byte, client http.Client) ([][]byte, string) {
 		log.Fatalf("Error get peers addresses: %v\n", err)
 	}
 	reponse2 := ParseREST(reponse)
-	return reponse2, peerAddr
+	return reponse2, peerAddr, string(ids[j])
 }
 
 //===================================================================================================
@@ -551,7 +553,7 @@ func dataReceiver(client http.Client) {
 			fmt.Printf("\n\n\n\n\n\n\n\n")
 			peertable := ParseREST(body)
 
-			peertableAddr, peerURL := PeerSelector(peertable, client)
+			peertableAddr, peerURL, peerName := PeerSelector(peertable, client)
 
 			//#######################################################################################################################################
 
@@ -685,7 +687,7 @@ func dataReceiver(client http.Client) {
 							filePath = filePath + "/" + fileName
 						} else {
 							//On télécharge tout le dossier
-							collectDirectory(response, connP2P, fileName, "./"+fileName)
+							collectDirectory(response, connP2P, fileName, "./"+"downlaod_from_"+peerName+"/"+fileName)
 							collected_directory = 1
 							break //Et on arre la descente dans l'arborescence
 						}
@@ -698,7 +700,11 @@ func dataReceiver(client http.Client) {
 					collectDataFile(response, connP2P, &out)
 
 					//Création du fichier dans lequel on va écrire les données
-					f, errr := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0755) //Création du fichier dans lequel on va écrire les données
+					err := os.MkdirAll("./"+"downlaod_from_"+peerName, 0755)
+					if err != nil {
+						log.Printf("Erreur création de dossier")
+					}
+					f, errr := os.OpenFile("./"+"downlaod_from_"+peerName+"/"+fileName, os.O_CREATE|os.O_RDWR, 0755) //Création du fichier dans lequel on va écrire les données
 					if errr != nil {
 						fmt.Printf("Err open\n")
 						log.Fatal(err)
