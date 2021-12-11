@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -513,7 +514,7 @@ func TreeChecker() bool {
 //                                SUBROUTINES
 //===================================================================================================
 
-func HelloRepeater(conn *net.UDPConn) {
+func HelloRepeater(conn *net.UDPConn, ourPrivKey *ecdsa.PrivateKey, pairPubKey *ecdsa.PublicKey) {
 	ext := make([]byte, 4)
 	name := "panic"
 	hello := append(ext, []byte(name)...)
@@ -525,9 +526,9 @@ func HelloRepeater(conn *net.UDPConn) {
 
 	for {
 		Id = newID()
-		helloMess := NewMessage(Id, Type, Length, hello)
+		helloMess := NewMessage(Id, Type, hello, ourPrivKey)
 		MessageSender(conn, helloMess)
-		response := MessageListener(conn, helloMess, true)
+		response := MessageListener(conn, helloMess, true), pairPubKey )
 
 		if !TypeChecker(response, 128) {
 			ErrorMessageSender(response, "Bad type\n", conn)
@@ -539,7 +540,7 @@ func HelloRepeater(conn *net.UDPConn) {
 	}
 }
 
-func dataReceiver(client http.Client) {
+func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, pairPubKey *ecdsa.PublicKey) {
 	//Tout ce qui suit sera fait en boucle
 	for {
 
@@ -580,12 +581,12 @@ func dataReceiver(client http.Client) {
 			for _, addr := range peertableAddr {
 				Id = newID()
 
-				helloMess := NewMessage(Id, Type, Length, hello)
+				helloMess := NewMessage(Id, Type,hello, privateKey)
 
 				connP2P = UDPInit(string(addr))
 
 				MessageSender(connP2P, helloMess)                     //Il faut d'abord dire bonjour, sinon pas content
-				response := MessageListener(connP2P, helloMess, true) //Helloreply
+				response := MessageListener(connP2P, helloMess, true, pairPubKey) //Helloreply
 				if !TypeChecker(response, 128) || !bytes.Equal(helloMess.Id[:4], response.Id[:4]) {
 					log.Printf("Tentative de connexion échouée, au stade Hello\n")
 					connP2P.Close()
