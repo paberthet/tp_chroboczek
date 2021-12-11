@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"crypto/ecdsa"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -10,6 +11,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -25,6 +27,7 @@ type Message struct {
 	Type   []byte
 	Length []byte
 	Body   []byte
+	Sign   []byte
 }
 
 var serveurUrl = "jch.irif.fr:8082"
@@ -68,22 +71,29 @@ func UDPInit(url string) *net.UDPConn {
 	return conn
 }
 
-func NewMessage(I []byte, T []byte, L []byte, B []byte) Message {
+func NewMessage(I []byte, T []byte, B []byte, privK *ecdsa.PrivateKey) Message {
 	Longueur := make([]byte, 2)
+	signature := make([]byte, 0, 64)
 	if len(I) != 4 {
 		log.Fatal("Invalid Id length on message initialisation")
 	}
 	if len(T) != 1 {
 		log.Fatal("Invalid Type length on message initialisation")
 	}
-	if len(L) != 2 {
-		log.Fatal("Invalid Length object on message initialisation")
-	}
 	binary.BigEndian.PutUint16(Longueur[0:], uint16(len(B)))
-	if !bytes.Equal(Longueur, L) {
-		log.Fatal("Invalid Body length on message initialisation")
+	if privK != nil {
+		data := append(I, T...)
+		data = append(data, Longueur...)
+		data = append(data, B...)
+		sign := sha256.Sum256(data)
+		r, s, err := ecdsa.Sign(rand.Reader, privK, sign[:])
+		if err != nil {
+			log.Fatal("Error while signing message")
+		}
+		r.FillBytes(signature[:32])
+		s.FillBytes(signature[32:64])
 	}
-	mess := Message{I, T, L, B}
+	mess := Message{I, T, Longueur, B, signature}
 	return mess
 }
 
@@ -91,11 +101,28 @@ func MessageToBytes(mess Message) []byte {
 	ret := append(mess.Id, mess.Type...)
 	ret = append(ret, mess.Length...)
 	ret = append(ret, mess.Body...)
+	ret = append(ret, mess.Sign...)
 	return ret
 }
 
-func BytesToMessage(tab []byte) Message {
-	mess := NewMessage(tab[:4], tab[4:5], tab[5:7], tab[7:])
+func BytesToMessage(tab []byte, pubK *ecdsa.PublicKey) Message {
+	signature := make([]byte, 0, 64)
+	var r, s big.Int
+	length := binary.BigEndian.Uint16(tab[5:7])
+	if pubK != nil {
+		if len(tab) != int(length)+7+64 {
+			log.Fatal("Message is not of appropriate length for signed message")
+		}
+		data := sha256.Sum256(tab[:length+7])
+		signature = tab[length+7:]
+		r.SetBytes(signature[:32])
+		s.SetBytes(signature[32:])
+		ok := ecdsa.Verify(pubK, data[:], &r, &s)
+		if !ok {
+			log.Fatal("Invalid signature")
+		}
+	}
+	mess := NewMessage(tab[:4], tab[4:5], tab[7:length+7], nil)
 	return mess
 }
 
@@ -727,9 +754,16 @@ func dataReceiver(client http.Client) {
 
 //==================================================================================================
 func main() {
+
+	//=============================================================================================
+	// Generation de notre signature
+	//=============================================================================================
+
+	pubK, privK := projetcrypto.ECDHGen()
+
 	//var peertable [][]byte
 	var wg sync.WaitGroup
-	/*Partie dédiée à des tests temporaires========================================================*/
+	/*Partie dédiée à des tests temporaires========================================================
 	text := []byte("Un petit texte tout mignon tout plein à chiffrer qui je l espère fait plus de 256 bits")
 	text2 := []byte("yuppy")
 	key := []byte("YOLO")
