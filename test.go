@@ -278,11 +278,11 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 			Type[0] = 3 //getDatum
 			Length := make([]byte, 2)
 			binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
-
+			Id = newID()
 			giveMeData := NewMessage(Id, Type, Length, mess.Body[33+32*i:33+32*(i+1)])
 
 			MessageSender(conn, giveMeData)
-			Id = newID()
+			
 			response := MessageListener(conn)
 			if !checkHash(response) {
 				log.Printf("Bad hash")
