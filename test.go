@@ -116,7 +116,7 @@ func BytesToMessage(tab []byte, pubK *ecdsa.PublicKey) Message {
 		data := sha256.Sum256(tab[:length+7])
 		signature = tab[length+7:]
 		r.SetBytes(signature[:32])
-		s.SetBytes(signature[32:])
+		s.SetBytes(signature[32:64])
 		ok := ecdsa.Verify(pubK, data[:], &r, &s)
 		if !ok {
 			log.Fatal("Invalid signature")
@@ -198,7 +198,7 @@ func MessageListener(conn *net.UDPConn, sended Message, repeat bool, pubK *ecdsa
 		if errRead == nil {
 			break
 		}
-		if repeat == false { //si on decide de ne pas répéter la requette on s'arrête là
+		if !repeat { //si on decide de ne pas répéter la requette on s'arrête là
 			break
 		}
 		if i == 5 {
@@ -302,7 +302,7 @@ func checkHash(mess Message) bool {
 
 func collectDataFile(mess Message, conn *net.UDPConn, privK *ecdsa.PrivateKey, bobK *ecdsa.PublicKey, out *[]byte) { //c'est en fait un deep first search
 	if !TypeChecker(mess, 131) { //Il faut que ce soit un message Datum
-		//ErrorMessageSender(response, "Bad type\n", conn)
+		ErrorMessageSender(mess, "Bad type\n", conn)
 	}
 	dataType := mess.Body[32] //c'est à cet endroit qu'est codé le type de data, après les 32 premiers octet du hash de notre requette
 	if dataType == 2 {        //On est dans un directory
@@ -524,10 +524,6 @@ func TreeChecker() bool {
 	return false
 }
 
-//====================================================================================================
-//								Sécurité
-//====================================================================================================
-
 //===================================================================================================
 //                                SUBROUTINES
 //===================================================================================================
@@ -717,7 +713,7 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, bobK *ecdsa.
 				if collected_directory != 1 {
 					//Sortie de la boucle, donc si nous n'avon spas télécharger un dossier complet, nous somme dans un BigFile ou un file
 					out := make([]byte, 0)
-					collectDataFile(response, connP2P,privateKey ,bobK ,&out)
+					collectDataFile(response, connP2P, privateKey, bobK, &out)
 
 					//Création du fichier dans lequel on va écrire les données
 					err := os.MkdirAll("./"+"downlaod_from_"+peerName, 0755)
@@ -753,20 +749,10 @@ func main() {
 	//=============================================================================================
 
 	pubK, privK := projetcrypto.ECDHGen()
+	var bobK *ecdsa.PublicKey
+	bobK = nil
 
-	//var peertable [][]byte
 	var wg sync.WaitGroup
-	/*Partie dédiée à des tests temporaires========================================================
-	text := []byte("Un petit texte tout mignon tout plein à chiffrer qui je l espère fait plus de 256 bits")
-	text2 := []byte("yuppy")
-	key := []byte("YOLO")
-	cipher := projetcrypto.AESEncrypt(key, text)
-	cipher2 := projetcrypto.AESEncrypt(key, text2)
-	fmt.Printf("%v\n", bytes.Equal(text, projetcrypto.AESDecrypt(key, cipher)))
-	fmt.Printf("%v\n", bytes.Equal(text2, projetcrypto.AESDecrypt(key, cipher2)))
-	//log.Fatalf("End of temporary tests")
-	/*
-		==========================================================================================*/
 
 	//Préparation des requettes REST
 	transport := http.DefaultTransport.(*http.Transport)
@@ -775,30 +761,6 @@ func main() {
 		Transport: transport,
 		Timeout:   50 * time.Second,
 	}
-
-	//Récupération des pairs
-	//body, err := HttpRequest("GET", jchPeersAddr, *client)
-	//if err != nil {
-	//	log.Fatalf("Error get peers : %v\n", err)
-	//	return
-	//}
-	//affichage des pairs
-	//peertable = ParseREST(body)
-
-	//On ne se sert pas de cette ligne, on le fait à la main dans le test en dessous
-	//peertable = PeerSelector(peertable, *client)
-
-	//Récupération de root de jch
-	//body, err = HttpRequest("GET", jchRootAddr, *client)
-	//if err != nil {
-	//	log.Fatalf("Error get root : %v\n", err)
-	//	return
-	//}
-
-	//affichage de root
-	//log.Printf("\n\nroot : %v\n\n", body)
-	//hash := body
-
 	hashEmptyRoot := make([]byte, 32)
 	//var hashEmptyRootStr string = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	//c'est sale de le faire à la main mais c'est pour le test
@@ -814,16 +776,14 @@ func main() {
 
 	Type := make([]byte, 1)
 	Type[0] = 0
-	Length := make([]byte, 2)
-	binary.BigEndian.PutUint16(Length[0:], uint16(len(hello)))
 
-	helloMess := NewMessage(newID(), Type, Length, hello)
+	helloMess := NewMessage(newID(), Type, hello, &privK)
 
 	conn := UDPInit(serveurUrl)
 	defer conn.Close()
 
 	MessageSender(conn, helloMess)
-	response := MessageListener(conn, helloMess, true)
+	response := MessageListener(conn, helloMess, true, bobK)
 
 	if !TypeChecker(response, 128) {
 		ErrorMessageSender(response, "Bad type\n", conn)
@@ -834,189 +794,32 @@ func main() {
 
 	//Publickey + PublicKeyReply
 
-	response = MessageListener(conn, helloMess, false)
+	response = MessageListener(conn, helloMess, false, bobK)
 	if !TypeChecker(response, 1) {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
-	L := make([]byte, 2)
-	noPubKey := make([]byte, 0)
 	response.Type[0] = byte(129)
-	response.Body = noPubKey
-	response.Length = L
-
-	/////////////////////////////////////////////////////////////////////////////////////////////
-	//Insérer une pubkey
-	//////////////////////////////////////////////////////////////////////////////////////////////
-
+	response = NewMessage(response.Id, response.Type, pubK, &privK)
 	MessageSender(conn, response)
 
 	//root + rootReply
 
-	response = MessageListener(conn, response, false)
+	response = MessageListener(conn, response, false, bobK)
 	if !TypeChecker(response, 2) {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
-	response.Body = hashEmptyRoot
 	response.Type[0] = byte(130)
+	response = NewMessage(response.Id, response.Type, hashEmptyRoot, &privK)
 	MessageSender(conn, response)
 
 	//wg.Add(1)
-	//go HelloRepeater(conn)
+	//go HelloRepeater(conn, &privK, bobK)
 	//defer wg.Done()
 
 	wg.Add(1)
-	go dataReceiver(*client)
+	go dataReceiver(*client, &privK, bobK)
 	defer wg.Done()
 	wg.Wait()
-
-	//à paritr de là, tout ce qui est en dessous peut être remplacer par un go dataReceiver()
-	/*
-
-		//######################################################################################################################################################################
-
-		//Test d'accès aux données de jch
-		//Récup des adresses de jch
-		body, err = HttpRequest("GET", jchAddr, *client)
-		if err != nil {
-			log.Fatalf("Error get adresses : %v\n", err)
-			return
-		}
-		addressesTable := ParseREST(body)
-		//affichage des adresses
-		log.Printf("\n\nadresses : %v\n\n", string(addressesTable[0])) //Une en IPv4
-		//log.Printf("\n\nadresses : %v\n\n", string(addressesTable[1])) //Une en IPv6
-
-		//On va tester l'IPv4
-
-		connP2P := UDPInit(string(addressesTable[0]))
-		defer connP2P.Close()
-
-		MessageSender(connP2P, helloMess)   //Il faut d'abord dire bonjour, sinon pas content
-		response = MessageListener(connP2P) //Helloreply
-		if !TypeChecker(response, 128) {
-			ErrorMessageSender(response, "Bad type\n", conn)
-		}
-		//pubKey
-		response = MessageListener(connP2P)
-		if !TypeChecker(response, 1) {
-			ErrorMessageSender(response, "Bad type\n", conn)
-		}
-		fmt.Printf("Pubkey jch : %v\n", response.Body) //Jch n'utilise pas de pubkey
-		//Pubkeyreply
-		response.Type[0] = byte(129)
-		MessageSender(connP2P, response)
-
-		//Root / rootreply  Apparement, il faut le faire aussi entre pairs .. c'est bizarre vu qu'on l'a déjà fait avec le serveur mais bon
-		response = MessageListener(connP2P)
-		if !TypeChecker(response, 2) {
-			ErrorMessageSender(response, "Bad type\n", conn)
-		}
-		response.Body = hashEmptyRoot
-		response.Type[0] = byte(130)
-		MessageSender(connP2P, response)
-
-		Type[0] = 3                                        //getDatum
-		binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
-
-		giveMeData := NewMessage(Id, Type, Length, hash)
-		//fmt.Printf("%v \n", giveMeData)
-		MessageSender(connP2P, giveMeData)
-		response = MessageListener(connP2P)
-		if !TypeChecker(response, 131) { //La première fois je me suis pris un : 254 --> please hello first, je suis pas poly j'ai pas dit boujour
-			log.Printf("No datum..\n")
-		}
-
-		data_type := response.Body[32]
-		if data_type == 0 {
-			fmt.Printf("\nC'est un chunk\n")
-		} else if data_type == 1 {
-			fmt.Printf("\nC'est un bigfile\n")
-		} else {
-			fmt.Printf("\nC'est un directory\n")
-		}
-
-		nb_node := (binary.BigEndian.Uint16(response.Length) - 33) / 64 //le - 33 est du au fait que la réponse contient le hash que l'on a demandé, suivi d'un 2 (est-ici que le type de node est codé?)
-		fmt.Printf("Body node number : \n%v\n", nb_node)                //Jch ne signe pas, alors c'est quoi ces octets à la fin???
-
-		fmt.Printf("Body rep get datum : \n%v\n", response.Body)
-
-		//Il faut parser la réponse
-		for i := 0; uint16(i) < nb_node; i++ {
-			fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
-		}
-	*/
-
-	/*
-		//Imaginons qu'on veuille README, c'est le 1 donc on prend le premier hash --> bizarre il a un coeff 2 comme si c'était un directory
-		giveMeData.Body = response.Body[33+64*1-32 : 33+64*1] //Le 1 dans 33+64*1 - 32 et de 33 + 64*1 correspond au 1 du premier élément de la liste
-		fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
-		MessageSender(connP2P, giveMeData)
-		response = MessageListener(connP2P)
-		if !TypeChecker(response, 131) {
-			log.Printf("No datum..\n")
-		}
-
-		fmt.Printf("Body rep get datum : \n%v\n", response.Body)
-		data_type = response.Body[32]
-		if data_type == 0 {
-			fmt.Printf("\nC'est un chunk\n")
-		} else if data_type == 1 {
-			fmt.Printf("\nC'est un bigfile\n")
-		} else {
-			fmt.Printf("\nC'est un directory\n")
-		}
-
-		fmt.Printf("Body rep get datum : \n%v\n", response.Body)
-		fmt.Printf("Et le README est :\n%v\n", string(response.Body[33:]))
-	*/
-
-	/*
-		//Imaginons que l'on veuille aller dans images
-		giveMeData.Body = response.Body[33+64*3-32 : 33+64*3] //Le 1 dans 33+32*1 et de 33+32*(1+2) correspond au 1 du premier élément de la liste
-
-		fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
-		MessageSender(connP2P, giveMeData)
-		response = MessageListener(connP2P)
-		nb_node = (binary.BigEndian.Uint16(response.Length) - 33) / 64
-		for i := 0; uint16(i) < nb_node; i++ {
-			fmt.Printf("élément %v : %v\n", i, string(response.Body[33+64*i:33+64*i+32]))
-		}
-		//fmt.Printf("Body rep get datum : \n%v\n",string(response.Body))
-
-		//est ce qu'on ne voudrait pas jch.jpeg? si si
-		fileName := string(response.Body[33+64*3-64 : 33+64*3-32])
-		//fileName := "jch.jpeg"
-		//fmt.Printf("File name len: \n%d\n",len(fileName))
-		fileName = strings.Trim(fileName, string(0))
-
-		giveMeData.Body = response.Body[33+64*3-32 : 33+64*3] //jch.jpeg est aussi en 3 eme position
-		fmt.Printf("\ngiveMeData : \n%v \n", giveMeData)
-		MessageSender(connP2P, giveMeData)
-		response = MessageListener(connP2P)
-		TypeChecker(response, 131)
-		fmt.Printf("Body rep get datum : \n%v\n", response.Body)
-
-		out := make([]byte, 0)
-		collectDataFile(response, connP2P, &out)
-
-		//fmt.Printf("test recup bigFile : \n%v\n",out)
-
-		f, errr := os.OpenFile(fileName, os.O_CREATE|os.O_RDWR, 0755) //Pk elle veut pas un string en paramètre elle...
-		if errr != nil {
-			fmt.Printf("Err open\n")
-			log.Fatal(err)
-		}
-
-		_, err = f.Write(out)
-		if err != nil {
-			fmt.Printf("Err write\n")
-			log.Fatal(err)
-		}
-
-		f.Close()
-
-	*/
-	//##########################################################################################################################################################################
 }
 
 //##########################################################################################################################################################################
