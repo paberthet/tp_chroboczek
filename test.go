@@ -220,7 +220,7 @@ func MessageListener(conn *net.UDPConn, sended Message, repeat bool, pubK *ecdsa
 	return mess
 }
 
-func NATTravMessage(peeraddr [][]byte, connJCH *net.UDPConn, privK *ecdsa.PrivateKey) *net.UDPConn {
+func NATTravMessage(peeraddr [][]byte, connJCH *net.UDPConn, privK *ecdsa.PrivateKey, bobK *ecdsa.PublicKey) *net.UDPConn {
 	//Préparation du message à envoyer au serveur
 	T := make([]byte, 1)
 	I := make([]byte, 4)
@@ -269,13 +269,14 @@ func NATTravMessage(peeraddr [][]byte, connJCH *net.UDPConn, privK *ecdsa.Privat
 			Id_tmp_client1 := helloMess.Id
 
 			//Ecoute si Hello du client
-			rep := MessageListener(connP2P, helloMess, false)
+			rep := MessageListener(connP2P, helloMess, false, bobK)
 			//si on a un retour
 			if (rep.Type[0] == 0) && !(bytes.Equal(rep.Id[:4], make([]byte, 4))) { //Message hello et Id non nul
-				rep.Type[0] = 128           //type de hello reply, on utilise rep car il y a deja le bon id dedans
+				rep.Type[0] = 128        //type de hello reply, on utilise rep car il y a deja le bon id dedans
+				rep = NewMessage(rep.Id, rep.Type, rep.Body, privK)
 				MessageSender(connP2P, rep) //On envoie un hello reply au hello qu'on vient de recevoir
 				//on peut aussi écouter le helloReply qu'on est censés recevoir en retour de notre hello
-				rep = MessageListener(connP2P, rep, true)
+				rep = MessageListener(connP2P, rep, true, nil)
 				//fmt.Printf("HelloReply mess normalement : %v\n", rep)
 				if !bytes.Equal(rep.Id[:4], Id_tmp_client1) {
 					fmt.Printf("Erreur : Helloreply avec le mauvais Id\n")
@@ -299,7 +300,7 @@ func checkHash(mess Message) bool {
 	return bytes.Equal(check[:], mess.Body[:32])
 }
 
-func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en fait un deep first search
+func collectDataFile(mess Message, conn *net.UDPConn, privK *ecdsa.PrivateKey,bobK *ecdsa.PublicKey, out *[]byte) { //c'est en fait un deep first search
 	if !TypeChecker(mess, 131) { //Il faut que ce soit un message Datum
 		//ErrorMessageSender(response, "Bad type\n", conn)
 	}
@@ -314,20 +315,17 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 			//Faire getdatum
 			Type := make([]byte, 1)
 			Type[0] = 3 //getDatum
-			Length := make([]byte, 2)
-			binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
 			Id = newID()
-			giveMeData := NewMessage(Id, Type, Length, mess.Body[33+32*i:33+32*(i+1)])
+			giveMeData := NewMessage(Id, Type, mess.Body[33+32*i:33+32*(i+1)], privK)
 
 			MessageSender(conn, giveMeData)
 
-			response := MessageListener(conn, giveMeData, true)
+			response := MessageListener(conn, giveMeData, true, bobK)
 			if !checkHash(response) {
 				log.Printf("Bad hash")
 				return
 			}
-
-			collectDataFile(response, conn, out)
+			collectDataFile(response, conn, privK, bobK, out)
 		}
 		return
 	} else { //dataType = 0 on est donc dans un chunk
@@ -336,11 +334,11 @@ func collectDataFile(mess Message, conn *net.UDPConn, out *[]byte) { //c'est en 
 	}
 
 }
-func collectDirectory(mess Message, conn *net.UDPConn, fileName string, filePath string) {
+func collectDirectory(mess Message, conn *net.UDPConn, fileName string, filePath string, privK *ecdsa.PrivateKey, bobK *ecdsa.PublicKey) {
 	if mess.Body[32] != 2 {
 		//On est sur un File ou big file
 		out := make([]byte, 0)
-		collectDataFile(mess, conn, &out)
+		collectDataFile(mess, conn, privK, bobK, &out)
 
 		//Création du fichier dans lequel on va écrire les données
 		f, errr := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0755) //Création du fichier dans lequel on va écrire les données
