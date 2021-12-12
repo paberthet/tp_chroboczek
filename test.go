@@ -535,7 +535,7 @@ func TreeChecker() bool {
 //                                SUBROUTINES
 //===================================================================================================
 
-func HelloRepeater(conn *net.UDPConn, ourPrivKey *ecdsa.PrivateKey, pairPubKey *ecdsa.PublicKey) {
+func HelloRepeater(conn *net.UDPConn, ourPrivKey *ecdsa.PrivateKey, bobK *ecdsa.PublicKey) {
 	ext := make([]byte, 4)
 	name := "panic"
 	hello := append(ext, []byte(name)...)
@@ -549,7 +549,7 @@ func HelloRepeater(conn *net.UDPConn, ourPrivKey *ecdsa.PrivateKey, pairPubKey *
 		Id = newID()
 		helloMess := NewMessage(Id, Type, hello, ourPrivKey)
 		MessageSender(conn, helloMess)
-		response := MessageListener(conn, helloMess, true), pairPubKey )
+		response := MessageListener(conn, helloMess, true, bobK)
 
 		if !TypeChecker(response, 128) {
 			ErrorMessageSender(response, "Bad type\n", conn)
@@ -561,7 +561,7 @@ func HelloRepeater(conn *net.UDPConn, ourPrivKey *ecdsa.PrivateKey, pairPubKey *
 	}
 }
 
-func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, pairPubKey *ecdsa.PublicKey) {
+func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, bobK *ecdsa.PublicKey) {
 	//Tout ce qui suit sera fait en boucle
 	for {
 
@@ -602,19 +602,19 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, pairPubKey *
 			for _, addr := range peertableAddr {
 				Id = newID()
 
-				helloMess := NewMessage(Id, Type,hello, privateKey)
+				helloMess := NewMessage(Id, Type, hello, privateKey)
 
 				connP2P = UDPInit(string(addr))
 
-				MessageSender(connP2P, helloMess)                     //Il faut d'abord dire bonjour, sinon pas content
-				response := MessageListener(connP2P, helloMess, true, pairPubKey) //Helloreply
+				MessageSender(connP2P, helloMess)                           //Il faut d'abord dire bonjour, sinon pas content
+				response := MessageListener(connP2P, helloMess, true, bobK) //Helloreply
 				if !TypeChecker(response, 128) || !bytes.Equal(helloMess.Id[:4], response.Id[:4]) {
 					log.Printf("Tentative de connexion échouée, au stade Hello\n")
 					connP2P.Close()
 
 				} else {
 					//pubKey
-					response = MessageListener(connP2P, helloMess, false)
+					response = MessageListener(connP2P, helloMess, false, bobK)
 					if !TypeChecker(response, 1) {
 						log.Printf("Tentative de connexion échouée, au stade pubkey\n")
 						connP2P.Close()
@@ -624,20 +624,20 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, pairPubKey *
 						//pubKey, _ := projetcrypto.ECDHGen() //Il faudra stocker la clef privée si on signe les messages
 						Type := make([]byte, 1)
 						Type[0] = byte(129)
-						L := make([]byte, 2)
-						noPubKey := make([]byte, 0)
-						response = NewMessage(response.Id, Type, L, noPubKey)
+						B := make([]byte, 0)
+						response = NewMessage(response.Id, Type, B, privateKey)
 
 						MessageSender(connP2P, response)
 
 						//Root / rootreply , il faut le faire aussi entre pairs
-						response = MessageListener(connP2P, response, false)
+						response = MessageListener(connP2P, response, false, bobK)
 						if !TypeChecker(response, 2) {
 							log.Printf("Tentative de connexion échouée, au stade root\n")
 							connP2P.Close()
 						} else {
-							response.Body = hashEmptyRoot
-							response.Type[0] = byte(130)
+							T := make([]byte, 1)
+							T[0] = byte(130)
+							response = NewMessage(response.Id, T, hashEmptyRoot, privateKey)
 							MessageSender(connP2P, response)
 							connected = true
 							break //Si on a réussi toutes ces étapes on peut arrếter d'essayer toutes les adresses
@@ -666,15 +666,15 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, pairPubKey *
 				//Préparation des messages get datum
 				Type[0] = 3                                        //getDatum
 				binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
-				giveMeData := NewMessage(Id, Type, Length, hash)
 				var response Message
 				collected_directory := 0
 
 				for nodeType == 2 { //Tant que l'on est dans un répertoire, on affiche son contenu à l'utilisateur
 					fmt.Printf("\n\nVous êtes dans %v\n\n", filePath)
-					giveMeData.Id = newID()
-					MessageSender(connP2P, giveMeData)                    //On envoie la requette
-					response = MessageListener(connP2P, giveMeData, true) //On recoit la réponse
+					Id = newID()
+					giveMeData := NewMessage(Id, Type, hash, privateKey)
+					MessageSender(connP2P, giveMeData)                          //On envoie la requette
+					response = MessageListener(connP2P, giveMeData, true, bobK) //On recoit la réponse
 
 					if !TypeChecker(response, 131) { //Vérification que c'est bien un datum
 						log.Printf("No datum..\n")
@@ -700,7 +700,8 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, pairPubKey *
 							fmt.Scanf("%d", &k)
 						}
 						if k != int(nb_node) {
-							giveMeData.Body = response.Body[33+64*(k+1)-32 : 33+64*(k+1)] //On met à jour le hash de la donnée que l'on veut récupérer
+							Id = newID()
+							giveMeData = NewMessage(Id, Type, response.Body[33+64*(k+1)-32:33+64*(k+1)], privateKey) //On met à jour le hash de la donnée que l'on veut récupérer
 							//fmt.Printf("response body :\n%v\n", response.Body)
 							//fmt.Printf("giveMeData body :\n%v\n", giveMeData.Body)
 							//On va garder en mémoire le nom du fichier/dossier vers lequel on se dirige, de cette manière on pourra nommer le fichier correctment dans notre machine
@@ -709,7 +710,7 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, pairPubKey *
 							filePath = filePath + "/" + fileName
 						} else {
 							//On télécharge tout le dossier
-							collectDirectory(response, connP2P, fileName, "./"+"downlaod_from_"+peerName+"/"+fileName)
+							collectDirectory(response, connP2P, fileName, "./"+"downlaod_from_"+peerName+"/"+fileName, privateKey, bobK)
 							collected_directory = 1
 							break //Et on arre la descente dans l'arborescence
 						}
