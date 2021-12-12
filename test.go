@@ -65,7 +65,8 @@ func UDPInit(url string) *net.UDPConn {
 	raddr, _ := net.ResolveUDPAddr("udp", url)
 	conn, errD := net.DialUDP("udp", nil, raddr)
 	if errD != nil {
-		log.Fatalf("Connection error %v\n", errD)
+		log.Printf("Connection error %v\n", errD)
+		return nil
 	}
 	return conn
 }
@@ -600,6 +601,9 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, bobK *ecdsa.
 				helloMess := NewMessage(Id, Type, hello, privateKey)
 
 				connP2P = UDPInit(string(addr))
+				if connP2P == nil { //Si l'établissement de la connexion a échoué, on abandonne et on passe à l'adresse suivante
+					continue
+				}
 
 				MessageSender(connP2P, helloMess)                           //Il faut d'abord dire bonjour, sinon pas content
 				response := MessageListener(connP2P, helloMess, true, bobK) //Helloreply
@@ -822,9 +826,9 @@ func main() {
 	response = NewMessage(response.Id, response.Type, hashEmptyRoot, privK)
 	MessageSender(conn, response)
 
-	//wg.Add(1)
-	//go HelloRepeater(conn, &privK, bobK)
-	//defer wg.Done()
+	wg.Add(1)
+	go HelloRepeater(conn, privK, bobK)
+	defer wg.Done()
 
 	wg.Add(1)
 	go dataReceiver(*client, privK, bobK, pubK)
