@@ -8,8 +8,6 @@ import (
 	"os"
 )
 
-var cmpt int = 0
-
 func main() {
 
 	files, err := os.ReadDir("./to_export")
@@ -32,13 +30,13 @@ func main() {
 	newMerkleTree(&racine, ".")
 
 	fmt.Printf("root hash:%v \n", racine.content)
-	test := append(racine.son[0].checksum, racine.son[1].checksum...)
-	fmt.Printf("verif : %v\n", test)
+	test := append(append(racine.son[0].checksum, racine.son[1].checksum...), racine.son[2].checksum...)
+	fmt.Printf("\nverif : %v\n\n", test)
 
 	for _, n := range racine.son {
 		fmt.Printf("Name : %v\n", string(n.name))
 	}
-	fmt.Printf("README : %v\n", string(racine.son[1].content))
+	fmt.Printf("README : %v\n", string(racine.son[2].content))
 
 }
 
@@ -112,8 +110,6 @@ func addHashToFatherContent(dady *Node, hash []byte) {
 }
 
 func fillBigFile(node *Node, data *[][]byte) error {
-	cmpt++
-	fmt.Printf("%v\n", cmpt)
 	length := len(*data)
 	emptyData := make([]byte, 0)
 	emptySon := make([]*Node, 0)
