@@ -630,7 +630,7 @@ func TreeChecker() bool {
 	return false
 }
 
-func newMerkleTree(topDir Node, fileParentPath string) {
+func newMerkleTree(topDir *Node, fileParentPath string) {
 	contTmp := make([]byte, 0)
 	nodTmp := make([]*Node, 0)
 	files, err := os.ReadDir(fileParentPath + "/" + string(topDir.name))
@@ -643,7 +643,7 @@ func newMerkleTree(topDir Node, fileParentPath string) {
 	for _, file := range files {
 		if file.IsDir() {
 			//création du Dir file.name()
-			childDir, err := NewDirectory(contTmp, &topDir, nodTmp, []byte(file.Name()))
+			childDir, err := NewDirectory(contTmp, topDir, nodTmp, []byte(file.Name()))
 			if err != nil {
 				log.Printf("Error new Node : %v\n", err)
 			}
@@ -651,13 +651,16 @@ func newMerkleTree(topDir Node, fileParentPath string) {
 			tmp := make([]*Node, 1)
 			tmp[0] = &childDir
 			topDir.son = append(topDir.son, tmp...)
-			newMerkleTree(childDir, fileParentPath+"/"+file.Name())
+			newMerkleTree(&childDir, fileParentPath+"/"+file.Name())
+			//ajout du hash de childDir à son père
+			addHashToFatherContent(topDir, childDir.checksum)
+
 		} else {
 			//On est au niveau d'un fichier
 			data := FileParser(fileParentPath + "/" + file.Name())
 			if len(data) > 1 { //Le fichier contient plus d'un chunk
 				//New bigfile
-				bigFile, err := NewBigFile(contTmp, &topDir, nodTmp, []byte(file.Name()))
+				bigFile, err := NewBigFile(contTmp, topDir, nodTmp, []byte(file.Name()))
 				if err != nil {
 					log.Printf("Error new Node : %v\n", err)
 				}
@@ -666,10 +669,13 @@ func newMerkleTree(topDir Node, fileParentPath string) {
 				tmp[0] = &bigFile
 				topDir.son = append(topDir.son, tmp...)
 				//appel de la fonction qui fera le bigFile
+				fillBigFile(&bigFile, data)
+				//Une fois le bigFile rempli, on ajoute son hash au contenu de son père
+				addHashToFatherContent(topDir, bigFile.checksum)
 
 			} else { //Le fichier est réduit à un chunk
 				//New file
-				file, err := NewFile(data[0], &topDir, []byte(file.Name()))
+				file, err := NewFile(data[0], topDir, []byte(file.Name()))
 				if err != nil {
 					log.Printf("Error new Node : %v\n", err)
 				}
@@ -680,10 +686,14 @@ func newMerkleTree(topDir Node, fileParentPath string) {
 				tmp := make([]*Node, 1)
 				tmp[0] = &file
 				topDir.son = append(topDir.son, tmp...)
+				//Une fois le file rempli, on ajoute son hash au contenu de son père
+				addHashToFatherContent(topDir, file.checksum)
 			}
-
 		}
 	}
+	//On a fini de tout remplir, on peut calculer le hash racine
+	hash := sha256.Sum256(topDir.content)
+	topDir.checksum = hash[:]
 }
 
 //===================================================================================================
