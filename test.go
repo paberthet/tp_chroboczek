@@ -531,6 +531,25 @@ func TreeChecker() bool {
 	return false
 }
 
+func newMerkleTree(node string, mkTree *merkleTree) {
+	//création du Dir node
+	files, err := os.ReadDir(node)
+	if err != nil {
+		log.Fatal(err)
+	}
+	for _, file := range files {
+		if file.IsDir() {
+			//création du Dir file.name()
+			//Ajout du noeud dans les enfants de node
+			newMerkleTree(node + "/" + file.Name())
+		} else {
+			//On est au niveau d'un fichier
+			//New bigfile/File
+			//Ajout dans les enfants de node
+		}
+	}
+}
+
 //===================================================================================================
 //                                SUBROUTINES
 //===================================================================================================
