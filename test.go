@@ -72,7 +72,8 @@ func UDPInit(url string) *net.UDPConn {
 
 func NewMessage(I []byte, T []byte, B []byte, privK *ecdsa.PrivateKey) Message {
 	Longueur := make([]byte, 2)
-	signature := make([]byte, 0, 64)
+	sig := make([]byte, 0, 64)
+	signature := make([]byte, 0)
 	if len(I) != 4 {
 		log.Fatal("Invalid Id length on message initialisation")
 	}
@@ -89,8 +90,10 @@ func NewMessage(I []byte, T []byte, B []byte, privK *ecdsa.PrivateKey) Message {
 		if err != nil {
 			log.Fatal("Error while signing message")
 		}
-		r.FillBytes(signature[:32])
-		s.FillBytes(signature[32:64])
+		sig1 := r.FillBytes(sig[:32])
+		sig2 := s.FillBytes(sig[32:64])
+		signature = append(signature, sig1...)
+		signature = append(signature, sig2...)
 	}
 	mess := Message{I, T, Longueur, B, signature}
 	return mess
