@@ -272,7 +272,7 @@ func NATTravMessage(peeraddr [][]byte, connJCH *net.UDPConn, privK *ecdsa.Privat
 			rep := MessageListener(connP2P, helloMess, false, bobK)
 			//si on a un retour
 			if (rep.Type[0] == 0) && !(bytes.Equal(rep.Id[:4], make([]byte, 4))) { //Message hello et Id non nul
-				rep.Type[0] = 128        //type de hello reply, on utilise rep car il y a deja le bon id dedans
+				rep.Type[0] = 128 //type de hello reply, on utilise rep car il y a deja le bon id dedans
 				rep = NewMessage(rep.Id, rep.Type, rep.Body, privK)
 				MessageSender(connP2P, rep) //On envoie un hello reply au hello qu'on vient de recevoir
 				//on peut aussi écouter le helloReply qu'on est censés recevoir en retour de notre hello
@@ -300,7 +300,7 @@ func checkHash(mess Message) bool {
 	return bytes.Equal(check[:], mess.Body[:32])
 }
 
-func collectDataFile(mess Message, conn *net.UDPConn, privK *ecdsa.PrivateKey,bobK *ecdsa.PublicKey, out *[]byte) { //c'est en fait un deep first search
+func collectDataFile(mess Message, conn *net.UDPConn, privK *ecdsa.PrivateKey, bobK *ecdsa.PublicKey, out *[]byte) { //c'est en fait un deep first search
 	if !TypeChecker(mess, 131) { //Il faut que ce soit un message Datum
 		//ErrorMessageSender(response, "Bad type\n", conn)
 	}
@@ -339,7 +339,6 @@ func collectDirectory(mess Message, conn *net.UDPConn, fileName string, filePath
 		//On est sur un File ou big file
 		out := make([]byte, 0)
 		collectDataFile(mess, conn, privK, bobK, &out)
-
 		//Création du fichier dans lequel on va écrire les données
 		f, errr := os.OpenFile(filePath, os.O_CREATE|os.O_RDWR, 0755) //Création du fichier dans lequel on va écrire les données
 		if errr != nil {
@@ -369,7 +368,7 @@ func collectDirectory(mess Message, conn *net.UDPConn, fileName string, filePath
 			Length := make([]byte, 2)
 			binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
 
-			giveMeData := NewMessage(Id, Type, Length, mess.Body[33+64*(i+1)-32:33+64*(i+1)]) //On met le bon hash dedans
+			giveMeData := NewMessage(Id, Type, mess.Body[33+64*(i+1)-32:33+64*(i+1)], privK) //On met le bon hash dedans
 			new_fileName := string(mess.Body[33+64*i : 33+64*i+32])
 			new_fileName = strings.Trim(new_fileName, string(0))
 
@@ -377,12 +376,12 @@ func collectDirectory(mess Message, conn *net.UDPConn, fileName string, filePath
 
 			MessageSender(conn, giveMeData)
 			Id = newID()
-			response := MessageListener(conn, giveMeData, true)
+			response := MessageListener(conn, giveMeData, true, bobK)
 			if !checkHash(response) {
 				log.Printf("Bad hash")
 				return
 			}
-			collectDirectory(response, conn, new_fileName, new_filePath)
+			collectDirectory(response, conn, new_fileName, new_filePath, privK, bobK)
 		}
 	}
 }
