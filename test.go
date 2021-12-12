@@ -718,7 +718,7 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, bobK *ecdsa.
 				if collected_directory != 1 {
 					//Sortie de la boucle, donc si nous n'avon spas télécharger un dossier complet, nous somme dans un BigFile ou un file
 					out := make([]byte, 0)
-					collectDataFile(response, connP2P, &out)
+					collectDataFile(response, connP2P,privateKey ,bobK ,&out)
 
 					//Création du fichier dans lequel on va écrire les données
 					err := os.MkdirAll("./"+"downlaod_from_"+peerName, 0755)
