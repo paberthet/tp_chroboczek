@@ -475,18 +475,18 @@ type Node struct {
 	chunk     bool
 	directory bool
 	root      *Node
-	son       []Node
+	son       []*Node
 	name      []byte
 }
 
-func NewNode(cont []byte, chu bool, dir bool, roo *Node, tab []Node, name []byte) (Node, error) {
+func NewNode(cont []byte, chu bool, dir bool, roo *Node, son []*Node, name []byte) (Node, error) {
 	var err error
 	err = nil
 	checksum := make([]byte, 32)
 	if len(cont) > 128 && !dir {
 		err = errors.New("content is more than 1024 bits")
 	}
-	if len(tab) > 32 && !dir {
+	if len(son) > 32 && !dir {
 		err = errors.New("parent of too many nodes")
 	}
 	if chu {
@@ -494,21 +494,105 @@ func NewNode(cont []byte, chu bool, dir bool, roo *Node, tab []Node, name []byte
 		checksum = checks[:]
 	}
 
-	nod := Node{cont, checksum, chu, dir, roo, tab, name}
+	nod := Node{cont, checksum, chu, dir, roo, son, name}
 	return nod, err
 }
 
-func NewDirectory(cont []byte, roo *Node, tab []Node, name []byte) (Node, error) {
-	return NewNode(cont, false, true, roo, tab, name)
+func NewDirectory(cont []byte, roo *Node, son []*Node, name []byte) (Node, error) {
+	return NewNode(cont, false, true, roo, son, name)
 }
 
-func NewBigFile(cont []byte, roo *Node, tab []Node, name []byte) (Node, error) {
-	return NewNode(cont, false, false, roo, tab, name)
+func NewBigFile(cont []byte, roo *Node, son []*Node, name []byte) (Node, error) {
+	return NewNode(cont, false, false, roo, son, name)
 }
 
 func NewFile(cont []byte, roo *Node, name []byte) (Node, error) {
-	emptyTabNode := make([]Node, 0)
+	emptyTabNode := make([]*Node, 0)
 	return NewNode(cont, true, false, roo, emptyTabNode, name)
+}
+
+func log_32(x int) (int, int) {
+	if x == 0 {
+		return 0, 0
+	}
+	log_32 := 0
+	for (x >> (5 * log_32)) > 0 {
+		log_32++
+	}
+	log_32--
+	coef := x >> (5 * log_32)
+	return coef, log_32
+}
+
+func addSon(dady *Node, child *Node) {
+	tmp := make([]*Node, 1)
+	tmp[0] = child
+	dady.son = append(dady.son, tmp...)
+}
+
+func addHashToFatherContent(dady *Node, hash []byte) {
+	dady.content = append(dady.content, hash...)
+}
+
+func fillBigFile(node *Node, data [][]byte) error {
+	length := len(data)
+	emptyData := make([]byte, 0)
+	emptySon := make([]*Node, 0)
+	noName := make([]byte, 0)
+	if length > 32 {
+		nbBigFileNeeded, log_len := log_32(length)
+		cmptr := 0
+		for cmptr <= nbBigFileNeeded { //Il faut nbNeeded + 1 pour le reste qui n'est pas plein
+			bigF, err := NewBigFile(emptyData, node, emptySon, noName)
+			if err != nil {
+				log.Printf("Error new bigFile : %v\n", err)
+				return err
+			}
+			//Ajout aux fils du père
+			addSon(node, &bigF)
+
+			limit := (1 << (5 * log_len))
+			//Test pour ne pas ajouter des 0 inutiles dans le dernier bigFile qui ne sera pas complet
+			l := len(data)
+			if limit > l {
+				limit = l
+			}
+			fillBigFile(&bigF, data[:limit])
+			//ajout du hash au contenu du père
+			addHashToFatherContent(node, bigF.checksum)
+			data = data[limit:]
+		}
+		//On a fini de rempli le bigFile node, on peut calculer son hash
+		hash := sha256.Sum256(node.content)
+		node.checksum = hash[:]
+	} else { //si len < 32
+		bigF, err := NewBigFile(emptyData, node, emptySon, noName)
+		if err != nil {
+			log.Printf("Error new bigFile : %v\n", err)
+			return err
+		}
+		//ajout aux fils du père
+		addSon(node, &bigF)
+		cmptr := 0
+		for cmptr < length {
+			file, err := NewFile(data[cmptr], &bigF, noName)
+			if err != nil {
+				log.Printf("Error new File : %v\n", err)
+				return err
+			}
+			//ajout aux fils du père
+			addSon(&bigF, &file)
+			hash := sha256.Sum256(data[cmptr])
+			file.checksum = hash[:]
+			//Ajout du hash au contenu du père
+			addHashToFatherContent(&bigF, hash[:])
+
+		}
+		//On a fini de remplir le bigFile bigF, on peut calculer son hash
+		hash := sha256.Sum256(bigF.content)
+		bigF.checksum = hash[:]
+	}
+	return nil
 }
 
 func FileParser(filepath string) [][]byte {
@@ -548,7 +632,7 @@ func TreeChecker() bool {
 
 func newMerkleTree(topDir Node, fileParentPath string) {
 	contTmp := make([]byte, 0)
-	nodTmp := make([]Node, 0)
+	nodTmp := make([]*Node, 0)
 	files, err := os.ReadDir(fileParentPath + "/" + string(topDir.name))
 	if err != nil {
 		log.Fatal(err)
@@ -564,8 +648,8 @@ func newMerkleTree(topDir Node, fileParentPath string) {
 				log.Printf("Error new Node : %v\n", err)
 			}
 			//Ajout du noeud dans les enfants de topDir
-			tmp := make([]Node, 1)
-			tmp[0] = childDir
+			tmp := make([]*Node, 1)
+			tmp[0] = &childDir
 			topDir.son = append(topDir.son, tmp...)
 			newMerkleTree(childDir, fileParentPath+"/"+file.Name())
 		} else {
@@ -578,8 +662,8 @@ func newMerkleTree(topDir Node, fileParentPath string) {
 					log.Printf("Error new Node : %v\n", err)
 				}
 				//Ajout dans les enfants de node
-				tmp := make([]Node, 1)
-				tmp[0] = bigFile
+				tmp := make([]*Node, 1)
+				tmp[0] = &bigFile
 				topDir.son = append(topDir.son, tmp...)
 				//appel de la fonction qui fera le bigFile
 
@@ -593,8 +677,8 @@ func newMerkleTree(topDir Node, fileParentPath string) {
 				hash := sha256.Sum256(data[0])
 				file.checksum = hash[:]
 				//Ajout dans les enfants de node
-				tmp := make([]Node, 1)
-				tmp[0] = file
+				tmp := make([]*Node, 1)
+				tmp[0] = &file
 				topDir.son = append(topDir.son, tmp...)
 			}
 
