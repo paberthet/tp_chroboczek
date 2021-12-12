@@ -470,28 +470,31 @@ func PeerSelector(ids [][]byte, client http.Client) ([][]byte, string, string) {
 //===================================================================================================
 
 type Node struct {
-	content   []byte
-	checksum  []byte
-	chunk     bool
-	directory bool
-	root      *Node
-	son       []Node
+	content  []byte
+	checksum []byte
+	chunk    bool
+	root     *Node
+	son      []Node
 }
 
-func NewNode(cont []byte, checksum []byte, chu bool, dir bool, roo *Node, tab []Node) (Node, error) {
+type Folder struct {
+	content  []Node
+	checksum []byte
+	root     *Folder
+	son      []Folder
+}
+
+func NewNode(cont []byte, chu bool, roo *Node, tab []Node) (Node, error) {
 	var err error
 	err = nil
-	if len(cont) > 128 && !dir {
+	if len(cont) > 128 {
 		err = errors.New("content is more than 1024 bits")
 	}
-	if len(tab) > 32 && !dir {
+	if len(tab) > 32 {
 		err = errors.New("parent of too many nodes")
 	}
 	checks := sha256.Sum256(cont)
-	if !bytes.Equal(checks[:], checksum) {
-		err = errors.New("invalid hash")
-	}
-	nod := Node{cont, checksum, chu, dir, roo, tab}
+	nod := Node{cont, checks[:], chu, roo, tab}
 	return nod, err
 }
 
@@ -517,8 +520,7 @@ func FileParser(filepath string) [][]byte {
 //eventuellement aussi de nouveaux struct
 
 func BytesToChunk(byt []byte) Node {
-	check := sha256.Sum256(byt)
-	nod, err := NewNode(byt, check[:], true, false, nil, nil)
+	nod, err := NewNode(byt, true, nil, nil)
 	if err != nil {
 		log.Printf("Error while building leafs : %v", err)
 	}
