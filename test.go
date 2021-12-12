@@ -140,11 +140,11 @@ func ExtChecker(mess Message, ext uint32) bool {
 }
 */
 
-func ErrorMessageSender(mess Message, str string, conn *net.UDPConn) { // génère message d'erreur à partir d'un message erroné
+func ErrorMessageSender(mess Message, str string, conn *net.UDPConn, privK *ecdsa.PrivateKey) { // génère message d'erreur à partir d'un message erroné
 	mess.Type[0] = byte(254)
 	tmp := []byte(str)
 	mess.Body = tmp
-	binary.BigEndian.PutUint16(mess.Length[0:], uint16(len(tmp)))
+	mess = NewMessage(mess.Id, mess.Type, mess.Body, privK)
 	MessageSender(conn, mess)
 	Id = newID() //Actualisation de Id
 }
@@ -305,7 +305,7 @@ func checkHash(mess Message) bool {
 
 func collectDataFile(mess Message, conn *net.UDPConn, privK *ecdsa.PrivateKey, bobK *ecdsa.PublicKey, out *[]byte) { //c'est en fait un deep first search
 	if !TypeChecker(mess, 131) { //Il faut que ce soit un message Datum
-		ErrorMessageSender(mess, "Bad type\n", conn)
+		ErrorMessageSender(mess, "Bad type\n", conn, privK)
 	}
 	dataType := mess.Body[32] //c'est à cet endroit qu'est codé le type de data, après les 32 premiers octet du hash de notre requette
 	if dataType == 2 {        //On est dans un directory
@@ -548,7 +548,7 @@ func HelloRepeater(conn *net.UDPConn, ourPrivKey *ecdsa.PrivateKey, bobK *ecdsa.
 		response := MessageListener(conn, helloMess, true, bobK)
 
 		if !TypeChecker(response, 128) {
-			ErrorMessageSender(response, "Bad type\n", conn)
+			ErrorMessageSender(response, "Bad type\n", conn, ourPrivKey)
 		}
 		if !bytes.Equal(response.Id[:4], helloMess.Id[:4]) {
 			log.Printf("HelloReply avec mauvais ID\n")
@@ -803,17 +803,17 @@ func main() {
 	response := MessageListener(conn, helloMess, true, bobK)
 
 	if !TypeChecker(response, 128) {
-		ErrorMessageSender(response, "Bad type\n", conn)
+		ErrorMessageSender(response, "Bad type\n", conn, privK)
 	}
 	if !bytes.Equal(helloMess.Id[:4], response.Id[:4]) {
-		ErrorMessageSender(response, "Bad Id\n", conn)
+		ErrorMessageSender(response, "Bad Id\n", conn, privK)
 	}
 
 	//Publickey + PublicKeyReply
 
 	response = MessageListener(conn, helloMess, false, bobK)
 	if !TypeChecker(response, 1) {
-		ErrorMessageSender(response, "Bad type\n", conn)
+		ErrorMessageSender(response, "Bad type\n", conn, privK)
 	}
 	response.Type[0] = byte(129)
 	response = NewMessage(response.Id, response.Type, pubK, privK)
@@ -823,7 +823,7 @@ func main() {
 
 	response = MessageListener(conn, response, false, bobK)
 	if !TypeChecker(response, 2) {
-		ErrorMessageSender(response, "Bad type\n", conn)
+		ErrorMessageSender(response, "Bad type\n", conn, privK)
 	}
 	response.Type[0] = byte(130)
 	response = NewMessage(response.Id, response.Type, hashEmptyRoot, privK)
