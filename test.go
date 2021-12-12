@@ -321,12 +321,14 @@ func collectDataFile(mess Message, conn *net.UDPConn, privK *ecdsa.PrivateKey, b
 			Id = newID()
 			giveMeData := NewMessage(Id, Type, mess.Body[33+32*i:33+32*(i+1)], privK)
 
+			nb_try := 0
 			MessageSender(conn, giveMeData)
-
 			response := MessageListener(conn, giveMeData, true, bobK)
-			if !checkHash(response) {
+			for !checkHash(response) && (nb_try < 10) {
 				log.Printf("Bad hash")
-				return
+				MessageSender(conn, giveMeData)
+				response = MessageListener(conn, giveMeData, true, bobK)
+
 			}
 			collectDataFile(response, conn, privK, bobK, out)
 		}
