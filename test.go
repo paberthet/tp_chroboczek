@@ -794,6 +794,9 @@ func main() {
 	helloMess := NewMessage(newID(), Type, hello, privK)
 
 	conn := UDPInit(serveurUrl)
+	if conn == nil {
+		log.Fatalf("Impossible de s'enregistrer sur serveur\n")
+	}
 	defer conn.Close()
 
 	MessageSender(conn, helloMess)
