@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/tls"
@@ -18,8 +19,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/paberthet/tp_chroboczek/projetcrypto"
 )
 
 type Message struct {
@@ -554,7 +553,7 @@ func HelloRepeater(conn *net.UDPConn, ourPrivKey *ecdsa.PrivateKey, bobK *ecdsa.
 	}
 }
 
-func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, bobK *ecdsa.PublicKey) {
+func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, bobK *ecdsa.PublicKey, pubK []byte) {
 	//Tout ce qui suit sera fait en boucle
 	for {
 
@@ -617,8 +616,8 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, bobK *ecdsa.
 						//pubKey, _ := projetcrypto.ECDHGen() //Il faudra stocker la clef privée si on signe les messages
 						Type := make([]byte, 1)
 						Type[0] = byte(129)
-						B := make([]byte, 0)
-						response = NewMessage(response.Id, Type, B, privateKey)
+						//B := make([]byte, 0) //potentiel pubK pour passer en mode non signé
+						response = NewMessage(response.Id, Type, pubK, privateKey)
 
 						MessageSender(connP2P, response)
 
@@ -661,11 +660,12 @@ func dataReceiver(client http.Client, privateKey *ecdsa.PrivateKey, bobK *ecdsa.
 				binary.BigEndian.PutUint16(Length[0:], uint16(32)) //Lenght = 32
 				var response Message
 				collected_directory := 0
+				Id = newID()
+				giveMeData := NewMessage(Id, Type, hash, privateKey)
 
 				for nodeType == 2 { //Tant que l'on est dans un répertoire, on affiche son contenu à l'utilisateur
 					fmt.Printf("\n\nVous êtes dans %v\n\n", filePath)
-					Id = newID()
-					giveMeData := NewMessage(Id, Type, hash, privateKey)
+
 					MessageSender(connP2P, giveMeData)                          //On envoie la requette
 					response = MessageListener(connP2P, giveMeData, true, bobK) //On recoit la réponse
 
@@ -748,7 +748,13 @@ func main() {
 	// Generation de notre signature
 	//=============================================================================================
 
-	pubK, privK := projetcrypto.ECDHGen()
+	//pubK, privK := projetcrypto.ECDHGen()
+	privK, _ := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	publicKey := privK.PublicKey
+	pubK := make([]byte, 64)
+	publicKey.X.FillBytes(pubK[:32])
+	publicKey.Y.FillBytes(pubK[32:])
+
 	var bobK *ecdsa.PublicKey
 	bobK = nil
 
@@ -761,6 +767,7 @@ func main() {
 		Transport: transport,
 		Timeout:   50 * time.Second,
 	}
+
 	hashEmptyRoot := make([]byte, 32)
 	//var hashEmptyRootStr string = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
 	//c'est sale de le faire à la main mais c'est pour le test
@@ -777,7 +784,7 @@ func main() {
 	Type := make([]byte, 1)
 	Type[0] = 0
 
-	helloMess := NewMessage(newID(), Type, hello, &privK)
+	helloMess := NewMessage(newID(), Type, hello, privK)
 
 	conn := UDPInit(serveurUrl)
 	defer conn.Close()
@@ -799,7 +806,7 @@ func main() {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	response.Type[0] = byte(129)
-	response = NewMessage(response.Id, response.Type, pubK, &privK)
+	response = NewMessage(response.Id, response.Type, pubK, privK)
 	MessageSender(conn, response)
 
 	//root + rootReply
@@ -809,7 +816,7 @@ func main() {
 		ErrorMessageSender(response, "Bad type\n", conn)
 	}
 	response.Type[0] = byte(130)
-	response = NewMessage(response.Id, response.Type, hashEmptyRoot, &privK)
+	response = NewMessage(response.Id, response.Type, hashEmptyRoot, privK)
 	MessageSender(conn, response)
 
 	//wg.Add(1)
@@ -817,7 +824,7 @@ func main() {
 	//defer wg.Done()
 
 	wg.Add(1)
-	go dataReceiver(*client, &privK, bobK)
+	go dataReceiver(*client, privK, bobK, pubK)
 	defer wg.Done()
 	wg.Wait()
 }
