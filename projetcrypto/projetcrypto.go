@@ -1,12 +1,15 @@
-package projetcrypto
+//package projetcrypto
+package main
 
 import (
+	"bytes"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
+	"fmt"
 	"io"
 	"log"
 	"math/big"
@@ -95,4 +98,37 @@ func AESDecrypt(dh []byte, data []byte) []byte {
 		log.Printf("Error while decrypting : %v\n", err)
 	}
 	return plaintext
+}
+
+func main() {
+	Bobpub, Bobpriv := ECDHGen()
+	AlicePub, AlicePriv := ECDHGen()
+
+	AliceShared := ECDHSharedGen(Bobpub, AlicePriv)
+	BobShared := ECDHSharedGen(AlicePub, Bobpriv)
+
+	fmt.Printf("Clé publique d'Alice au format octet : %v\n", AlicePub)
+	fmt.Printf("Clé publique de Bob au format octet : %v\n", Bobpub)
+
+	fmt.Printf("Alice et Bob ont le même secret : %v\n", bytes.Equal(AliceShared, BobShared))
+
+	AliceClair := "Bonjour je m'appelle Alice --- Hello my name is Alice --- Dzien dobry, ja jestem Alice"
+	BobClair := "Ich heisse Bob --- me liamo Bob --- yé souis Bob"
+
+	fmt.Printf("\n\nClair d'Alice : %v\n", AliceClair)
+	fmt.Printf("Clair de Bob : %v\n", BobClair)
+
+	AliceChiffre := AESEncrypt(AliceShared, []byte(AliceClair))
+	BobChiffre := AESEncrypt(BobShared, []byte(BobClair))
+
+	_, Charliepriv := ECDHGen()
+	CharlieShared := ECDHSharedGen(AlicePub, Charliepriv)
+
+	AliceDechiffre := string(AESDecrypt(AliceShared, BobChiffre))
+	BobDechiffre := string(AESDecrypt(BobShared, AliceChiffre))
+	CharlieDechiffre := string(AESDecrypt(CharlieShared, AliceChiffre))
+
+	fmt.Printf("\n\nDéchiffré par Alice : %v\n", AliceDechiffre)
+	fmt.Printf("Déchiffré par Bob : %v\n", BobDechiffre)
+	fmt.Printf("Tentative de Charlie : %v\n", CharlieDechiffre)
 }
