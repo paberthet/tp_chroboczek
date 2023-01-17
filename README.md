@@ -1,5 +1,8 @@
 # tp_chroboczek
-Projet de Chroboczek en langage Go
+Master's degree project, MIC, Université Paris-Cité (year 2021-2022)
+Projet réseau du cours de Juliusz Chroboczek en langage Go
+
+Avis aux étudiants du Master lisant ce répertoire, ne copiez pas le code présent ici. L'objectif d'un projet n'est pas de récolter une bonne note mais de vous poser les questions nécessaires pour affermir vos compétences en langage Go et en programmation réseau. De toute façon, Juliusz veille.
 
 * client.go est la partie principale de notre code 
 * Pour tester le client, se placer dans le dossier où il se trouve avec un terminal et entrer go run client.go
